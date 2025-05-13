@@ -16,7 +16,7 @@ A macOS utility that brings Windows-style auto-scrolling to macOS. Middle-click 
 
 ## Installation
 
-1. **Download**: Download the latest release from the [Releases](https://github.com/fromis-9/scrollapp-beta/releases) page
+1. **Download**: Download the latest release from the [Releases](https://github.com/fromis-9/scrollapp/releases) page
 2. **Install**: Open the DMG file and drag Scrollapp to your Applications folder
 3. **First Launch**: 
    - Try to open the app by double-clicking it
