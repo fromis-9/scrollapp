@@ -4,7 +4,7 @@
 
 A macOS utility that brings Windows-style auto-scrolling to macOS. Middle-click anywhere to enable auto-scroll mode, then move your cursor to control scrolling speed and direction.
 
-![Scrollapp Icon](Scrollapp/Scrollapp/Assets.xcassets/AppIcon.appiconset/scrollappicon.png)
+![Scrollapp Icon](img/scrollappicon.png)
 
 ## Features
 
