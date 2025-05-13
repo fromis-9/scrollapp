@@ -8,7 +8,7 @@ A macOS utility that brings Windows-style auto-scrolling to macOS. Middle-click 
 
 ## Features
 
-- **Windows-style Auto-scrolling**: Middle-click to activate, move cursor to control scrolling
+- **Auto-scrolling**: Middle-click to activate, move cursor to control scrolling
 - **Multiple Activation Methods**: Use mouse middle-click or Option+Scroll on trackpads
 - **Intuitive Controls**: Move cursor up/down to control scroll direction and speed
 - **Customizable Direction**: Option to invert scrolling direction based on preference
