@@ -70,12 +70,8 @@ Scrollapp requires Input Monitoring permissions to detect mouse/trackpad events.
 
 ## License
 
-[MIT License](LICENSE)
+[GNU General Public License v3.0](LICENSE)
 
 ## Feedback and Contributions
 
 Feedback and contributions are welcome! Please feel free to submit issues or pull requests.
-
----
-
-Developed with ❤️ 
