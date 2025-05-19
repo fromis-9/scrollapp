@@ -6,6 +6,7 @@
 import SwiftUI
 import Cocoa
 import UserNotifications
+import ServiceManagement
 
 @main
 struct ScrollappApp: App {
@@ -34,10 +35,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var lastScrollTime: Date?
     var scrollDetectionWindow = [CGFloat]()
     var isDirectionInverted = false  // Default is now "up scrolls up"
+    var launchAtLogin = false        // Track launch at login state
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Load user preferences
         isDirectionInverted = UserDefaults.standard.bool(forKey: "invertScrollDirection")
+        launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
+        
+        // Set initial launch at login state based on saved preference
+        updateLoginItemState()
         
         setupMenuBar()
         createScrollCursor()
@@ -66,6 +72,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let invertItem = NSMenuItem(title: "Invert Scrolling Direction", action: #selector(toggleDirectionInversion), keyEquivalent: "")
         invertItem.state = isDirectionInverted ? .on : .off
         menu.addItem(invertItem)
+        
+        // Add launch at login toggle
+        let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        launchItem.state = launchAtLogin ? .on : .off
+        menu.addItem(launchItem)
         
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "About Scrollapp", action: #selector(showAbout), keyEquivalent: ""))
@@ -162,7 +173,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Quadratic acceleration: scrollSpeed grows faster as distance increases
         let acceleration = pow(distance / 50, 2.0) // scale distance into a nice curve
-        let maxScrollSpeed: CGFloat = 30.0
+        let maxScrollSpeed: CGFloat = 30.00
         let scrollSpeed = min(acceleration * 2.5, maxScrollSpeed) // scaled + capped
 
         let finalAmount = direction * scrollSpeed
@@ -314,5 +325,62 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         // No notification - removed
+    }
+
+    @objc func toggleLaunchAtLogin() {
+        launchAtLogin = !launchAtLogin
+        UserDefaults.standard.set(launchAtLogin, forKey: "launchAtLogin")
+        updateLoginItemState()
+        
+        // Update menu item state
+        if let launchItem = statusItem.menu?.items.first(where: { $0.title == "Launch at Login" }) {
+            launchItem.state = launchAtLogin ? .on : .off
+        }
+    }
+
+    func updateLoginItemState() {
+        if #available(macOS 13.0, *) {
+            // Use the newer ServiceManagement API for macOS 13+
+            let service = SMAppService.mainApp
+            do {
+                if launchAtLogin {
+                    if service.status != .enabled {
+                        try service.register()
+                    }
+                } else {
+                    if service.status == .enabled {
+                        try service.unregister()
+                    }
+                }
+            } catch {
+                print("Failed to update login item: \(error.localizedDescription)")
+            }
+        } else {
+            // Use the older shared file list API for earlier macOS versions
+            let bundleURL = Bundle.main.bundleURL
+            let bundleID = Bundle.main.bundleIdentifier
+            
+            #if swift(>=5.0)
+            if let bundleIdentifier = bundleID {
+                SMLoginItemSetEnabled(bundleIdentifier as CFString, launchAtLogin)
+            }
+            #else
+            let itemReferences = LSSharedFileListCreate(nil, kLSSharedFileListSessionLoginItems.takeRetainedValue(), nil).takeRetainedValue()
+            let url = bundleURL as CFURL
+            if launchAtLogin {
+                LSSharedFileListInsertItemURL(itemReferences, kLSSharedFileListItemLast.takeRetainedValue(), nil, nil, url, nil, nil)
+            } else {
+                if let loginItems = LSSharedFileListCopySnapshot(itemReferences, nil).takeRetainedValue() as? [LSSharedFileListItem] {
+                    for loginItem in loginItems {
+                        var itemURL: NSURL?
+                        LSSharedFileListItemResolve(loginItem, 0, &itemURL, nil)
+                        if let itemURL = itemURL as URL?, itemURL.path == bundleURL.path {
+                            LSSharedFileListItemRemove(itemReferences, loginItem)
+                        }
+                    }
+                }
+            }
+            #endif
+        }
     }
 }

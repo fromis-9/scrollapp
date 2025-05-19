@@ -57,6 +57,7 @@ Once auto-scroll is activated:
 Access additional options from the menu bar icon:
 - Start/Stop Auto-Scroll
 - Invert Scrolling Direction
+- Launch at Login
 - About Scrollapp
 
 ## System Requirements
