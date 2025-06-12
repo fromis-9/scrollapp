@@ -130,4 +130,40 @@ crash.log
 .svn/
 CVS/
 .git/
-.hg/ 
+.hg/
+
+# Build artifacts
+*.dSYM
+
+# Temporary files  
+dmg_temp/
+*.log
+*.profraw
+
+# Keep essential build scripts (these files should be tracked)
+# scripts/build_universal.sh 
+# scripts/create_dmg_from_app.sh
+
+# IDE files
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Thumbnails
+._*
+
+# User-specific files
+*.perspectivev3
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.xcworkspace
+!default.xcworkspace 

@@ -4,5 +4,15 @@
 <dict>
 	<key>NSAccessibilityUsageDescription</key>
 	<string>This app needs accessibility permissions to enable auto-scrolling with the middle mouse button.</string>
+	
+	<!-- Universal Binary Optimization Keys -->
+	<key>LSArchitecturePriority</key>
+	<array>
+		<string>arm64</string>
+		<string>x86_64</string>
+	</array>
+	
+	<key>LSRequiresNativeExecution</key>
+	<true/>
 </dict>
 </plist>
