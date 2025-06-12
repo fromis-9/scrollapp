@@ -59,47 +59,12 @@ mkdir -p "${DMG_DIR}"
 echo "Copying app to DMG..."
 cp -R "$APP_PATH" "${DMG_DIR}/"
 
+# Re-sign with ad-hoc signature to remove personal info
+echo "Re-signing with ad-hoc signature..."
+codesign --force --deep --sign - --timestamp=none --identifier "com.scrollapp.Scrollapp" "${DMG_DIR}/Scrollapp.app" 2>/dev/null || echo "Code signing failed - continuing anyway"
+
 # Create Applications symlink
 ln -s /Applications "${DMG_DIR}/Applications"
-
-# Create installation instructions
-cat > "${DMG_DIR}/Installation Instructions.txt" << 'EOF'
-Scrollapp Installation Instructions
-
-INSTALLATION:
-1. Drag Scrollapp.app to the Applications folder
-2. Open Applications and launch Scrollapp
-3. If you see a security warning:
-   - Go to System Preferences → Security & Privacy
-   - Click "Open Anyway" 
-   - Click "Open" in the confirmation dialog
-
-HOW TO USE:
-• Middle-click anywhere to toggle auto-scroll (mouse)
-• Option + scroll to activate (trackpad)  
-• Move cursor to control speed and direction
-• Click anywhere to stop auto-scrolling
-• Use menu bar icon for settings
-
-PERMISSIONS:
-Grant Accessibility permissions when prompted for auto-scroll to work.
-
-Built with Xcode - Professional Quality!
-Thank you for using Scrollapp!
-EOF
-
-# Create technical info
-cat > "${DMG_DIR}/Build Info.txt" << EOF
-Technical Information - Scrollapp
-
-Build Method: Xcode Archive & Export
-Architecture: $(lipo -info "$BINARY_PATH" 2>/dev/null || echo "Could not determine")
-Code Signing: $(codesign -dv "$APP_PATH" 2>&1 | head -1 || echo "Ad-hoc signed")
-macOS Target: 11.0+
-
-Distribution: This app is safe to distribute and install.
-Users may see security warnings for non-Mac App Store apps.
-EOF
 
 # Create the DMG
 echo "Creating compressed DMG..."

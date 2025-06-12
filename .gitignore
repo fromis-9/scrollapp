@@ -135,6 +135,9 @@ CVS/
 # Build artifacts
 *.dSYM
 
+# Scripts and build tools
+scripts/
+
 # Temporary files  
 dmg_temp/
 *.log

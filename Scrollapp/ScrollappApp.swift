@@ -7,6 +7,7 @@ import SwiftUI
 import Cocoa
 import UserNotifications
 import ServiceManagement
+import ApplicationServices
 
 @main
 struct ScrollappApp: App {
@@ -97,6 +98,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set initial launch at login state based on saved preference
         updateLoginItemState()
+        
+        // Check and request Accessibility permissions
+        checkAccessibilityPermissions()
         
         setupMenuBar()
         createScrollCursor()
@@ -547,6 +551,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let success = SMLoginItemSetEnabled(bundleIdentifier as CFString, launchAtLogin)
                 if !success {
                     print("Failed to update login item using legacy API")
+                }
+            }
+        }
+    }
+    
+    func checkAccessibilityPermissions() {
+        // Check if we have Accessibility permissions
+        let trusted = AXIsProcessTrusted()
+        
+        if !trusted {
+            // Show alert asking user to grant permissions
+            let alert = NSAlert()
+            alert.messageText = "Accessibility Permissions Required"
+            alert.informativeText = "Scrollapp needs Accessibility permissions to enable auto-scrolling.\n\nPlease:\n1. Click 'Open System Preferences'\n2. Unlock the settings if needed\n3. Check the box next to Scrollapp\n4. Restart the app"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Open System Preferences")
+            alert.addButton(withTitle: "Skip")
+            
+            let response = alert.runModal()
+            
+            if response == .alertFirstButtonReturn {
+                // Open Accessibility preferences
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                    NSWorkspace.shared.open(url)
                 }
             }
         }

@@ -103,19 +103,31 @@ Scrollapp requires Input Monitoring permissions to detect mouse/trackpad events.
 
 To build Scrollapp from source:
 
-```bash
-# Clone the repository
-git clone https://github.com/your-username/scrollapp.git
-cd scrollapp
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-username/scrollapp.git
+   cd scrollapp
+   ```
 
-# Build universal binary
-./scripts/build_universal.sh
+2. **Open in Xcode:**
+   ```bash
+   open Scrollapp.xcodeproj
+   ```
 
-# Create DMG for distribution
-./scripts/create_dmg_from_app.sh build/universal/Scrollapp.app
-```
+3. **Build the app:**
 
-See [BUILD.md](BUILD.md) for detailed build instructions.
+   **Option A: With Apple Developer Program Account**
+   - In Xcode, select **Product** → **Archive**
+   - Click **Distribute App** → **Copy App**
+   - Choose a location to export the built app
+
+   **Option B: Without Developer Account (Free)**
+   - In Xcode, select **Product** → **Build** (⌘+B)
+   - Navigate to the build folder: **Product** → **Show Build Folder in Finder**
+   - Find your app in `Build/Products/Release/Scrollapp.app`
+   - Copy the app to your Applications folder or wherever you'd like
+
+The project is configured to build universal binaries that work on both Intel and Apple Silicon Macs.
 
 ## Feedback and Contributions
 
