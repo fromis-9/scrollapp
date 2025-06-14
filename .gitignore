@@ -130,7 +130,7 @@ crash.log
 .svn/
 CVS/
 .git/
-.hg/
+.hg/ 
 
 # Build artifacts
 *.dSYM

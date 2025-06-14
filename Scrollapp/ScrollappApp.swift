@@ -228,7 +228,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var lastClickTime: Date?
     var clickCount = 0
-    
+
     func setupMiddleClickListeners() {
         // Remove existing monitors
         if let monitor = globalMonitor {
@@ -429,7 +429,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Restart mouse listeners with new configuration
         setupMiddleClickListeners()
     }
-    
+
     @objc func showAbout() {
         let alert = NSAlert()
         alert.messageText = "About Scrollapp"
@@ -575,8 +575,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // Open Accessibility preferences
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
                     NSWorkspace.shared.open(url)
-                }
-            }
+                        }
+                    }
         }
     }
 }
