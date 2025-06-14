@@ -19,21 +19,17 @@ A macOS utility that brings Windows-style auto-scrolling to macOS. Middle-click 
 
 ## Installation
 
-1. **Download**: Download the latest release from the [Releases](https://github.com/fromis-9/scrollapp/releases) page
-2. **Install**: Open the DMG file and drag Scrollapp to your Applications folder
-3. **First Launch**: 
-   - Try to open the app by double-clicking it
-   - If you see a security warning that the app "cannot be opened because it is from an unidentified developer"
-   - Open System Settings (or System Preferences)
-   - Go to Privacy & Security
-   - Scroll down and look for the message about Scrollapp
-   - Click the "Open Anyway" button 
-   - When the warning prompt reappears, click "Open"
+1. **Download**: Download the latest release from the [Releases](https://github.com/fromis-9/scrollapp/releases) page.
+2. **Install**: Open the DMG file and drag Scrollapp to your Applications folder.
+3. **Security Override**: Since the app is distributed without Apple notarization, you'll need to manually allow it:
+   - **Method 1**: Right-click on Scrollapp.app → "Open" → "Open" in the dialog
+   - **Method 2**: If you see "can't be opened" error, go to System Settings → Privacy & Security → scroll down to find "Scrollapp was blocked" → click "Open Anyway"
 4. **Grant Permissions**:
-   - When prompted, allow Scrollapp to monitor input events
-   - If you miss this prompt, go to System Settings > Privacy & Security > Input Monitoring
-   - Ensure Scrollapp is checked in the list of allowed apps
-   - You may need to restart the app after granting permissions
+   - When prompted, grant Accessibility and Input Monitoring permissions.
+   - If you miss a prompt, you can grant permissions manually in System Settings:
+     - Go to `System Settings > Privacy & Security > Accessibility` and add Scrollapp.
+     - Go to `System Settings > Privacy & Security > Input Monitoring` and enable Scrollapp.
+   - You may need to restart the app after granting permissions.
 
 ## How to Use
 
@@ -91,9 +87,10 @@ Access additional options from the menu bar icon:
 - Mouse with middle button, side buttons, or trackpad support
 - Compatible with both Intel and Apple Silicon Macs
 
-## Privacy
+## Privacy & Security
 
-Scrollapp requires Input Monitoring permissions to detect mouse/trackpad events. It does not collect or transmit any personal data.
+- **Permissions**: Scrollapp requires Input Monitoring permissions to detect mouse/trackpad events. It does not collect or transmit any personal data.
+- **Code Signing**: The app is ad-hoc signed for free distribution. While this triggers macOS security warnings, the source code is fully open and auditable on GitHub.
 
 ## License
 
