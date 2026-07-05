@@ -54,6 +54,7 @@ Use your chosen method to toggle auto-scroll on/off, or click any other mouse bu
 ### Controlling Scrolling
 
 Once auto-scroll is activated:
+- A blue anchor indicator appears at the activation point and the menu bar icon turns green while auto-scroll is active
 - Move cursor **up** to scroll **up**
 - Move cursor **down** to scroll **down**
 - Move further from the center point for faster scrolling
@@ -78,6 +79,7 @@ Access additional options from the menu bar icon:
 - **Scroll Speed** - Sensitivity slider (0.2x - 3.0x)
 - **Activation Method** - Choose your preferred mouse/key combination
 - **Invert Scrolling Direction** - Reverse up/down behavior
+- **Show Activation Indicator** - Toggle the on-screen anchor shown while auto-scroll is active
 - **Launch at Login** - Automatic startup option
 - **About Scrollapp** - App information and usage tips
 

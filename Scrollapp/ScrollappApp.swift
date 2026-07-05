@@ -32,6 +32,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var scrollMonitor: Any?
     var clickMonitor: Any?
     var scrollCursor: NSCursor?
+    var originIndicatorPanel: NSPanel?
+    var showActivationIndicator = true  // Show on-screen anchor while auto-scrolling
     var isTrackpadMode = false
     var lastScrollTime: Date?
     var scrollDetectionWindow = [CGFloat]()
@@ -86,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Load user preferences
         isDirectionInverted = UserDefaults.standard.bool(forKey: "invertScrollDirection")
+        showActivationIndicator = UserDefaults.standard.object(forKey: "showActivationIndicator") as? Bool ?? true
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         scrollSensitivity = UserDefaults.standard.double(forKey: "scrollSensitivity")
         if scrollSensitivity == 0 { scrollSensitivity = 1.0 } // Default if not set
@@ -167,6 +170,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let invertItem = NSMenuItem(title: "Invert Scrolling Direction", action: #selector(toggleDirectionInversion), keyEquivalent: "")
         invertItem.state = isDirectionInverted ? .on : .off
         menu.addItem(invertItem)
+        
+        // Add activation indicator toggle
+        let indicatorItem = NSMenuItem(title: "Show Activation Indicator", action: #selector(toggleActivationIndicator), keyEquivalent: "")
+        indicatorItem.state = showActivationIndicator ? .on : .off
+        menu.addItem(indicatorItem)
         
         // Add launch at login toggle
         let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
@@ -297,6 +305,64 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.scrollCursor?.set() // keep forcing cursor
         }
         RunLoop.current.add(scrollTimer!, forMode: .common)
+
+        showOriginIndicator(at: point)
+        updateAutoScrollActiveState(active: true)
+    }
+
+    // A menu bar app cannot change the pointer over other apps' windows
+    // (NSCursor.set() has no effect there), so a click-through overlay panel at
+    // the activation point is used to show that auto-scroll is active, similar
+    // to the Windows auto-scroll anchor.
+    func showOriginIndicator(at point: NSPoint) {
+        hideOriginIndicator()
+        guard showActivationIndicator else { return }
+
+        let size: CGFloat = 36
+        let frame = NSRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
+        let panel = NSPanel(contentRect: frame,
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered,
+                            defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .screenSaver
+        panel.ignoresMouseEvents = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.isReleasedWhenClosed = false
+
+        let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        if let symbol = NSImage(systemSymbolName: "arrow.up.and.down.circle.fill",
+                                accessibilityDescription: "Auto-scroll origin") {
+            imageView.image = symbol.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: size - 8, weight: .regular))
+        }
+        imageView.contentTintColor = NSColor.systemBlue.withAlphaComponent(0.85)
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        panel.contentView = imageView
+        panel.orderFrontRegardless()
+
+        originIndicatorPanel = panel
+    }
+
+    func hideOriginIndicator() {
+        originIndicatorPanel?.close()
+        originIndicatorPanel = nil
+    }
+
+    func updateAutoScrollActiveState(active: Bool) {
+        if let button = statusItem.button {
+            let symbolName = active ? "arrow.up.and.down.circle.fill" : "arrow.up.and.down.circle"
+            if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Scrollapp") {
+                image.isTemplate = true
+                button.image = image
+                button.contentTintColor = active ? .systemGreen : nil
+            }
+        }
+
+        if let toggleItem = statusItem.menu?.items.first(where: { $0.action == #selector(toggleTrackpadMode) }) {
+            toggleItem.title = active ? "Stop Auto-Scroll" : "Start/Stop Auto-Scroll"
+        }
     }
 
     func performScroll() {
@@ -374,6 +440,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         RunLoop.current.add(scrollTimer!, forMode: .common)
         
+        if let point = originalPoint {
+            showOriginIndicator(at: point)
+        }
+        updateAutoScrollActiveState(active: true)
+
         // Show feedback to user
         showTrackpadModeNotification()
     }
@@ -448,6 +519,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         scrollTimer?.invalidate()
         scrollTimer = nil
         NSCursor.unhide()
+        hideOriginIndicator()
+        if isAutoScrolling {
+            updateAutoScrollActiveState(active: false)
+        }
         isAutoScrolling = false
         isTrackpadMode = false
         originalPoint = nil
@@ -498,6 +573,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             // For all other clicks, stop auto-scroll
             self.stopAutoScroll()
+        }
+    }
+
+    @objc func toggleActivationIndicator() {
+        showActivationIndicator = !showActivationIndicator
+        
+        // Save preference
+        UserDefaults.standard.set(showActivationIndicator, forKey: "showActivationIndicator")
+        
+        // Update menu item state
+        if let menu = statusItem.menu,
+           let indicatorItem = menu.items.first(where: { $0.action == #selector(toggleActivationIndicator) }) {
+            indicatorItem.state = showActivationIndicator ? .on : .off
+        }
+        
+        // Apply immediately if auto-scroll is currently active
+        if isAutoScrolling {
+            if showActivationIndicator, let point = originalPoint {
+                showOriginIndicator(at: point)
+            } else {
+                hideOriginIndicator()
+            }
         }
     }
 
