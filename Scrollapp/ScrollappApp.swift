@@ -33,6 +33,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var clickMonitor: Any?
     var scrollCursor: NSCursor?
     var originIndicatorPanel: NSPanel?
+    var showActivationIndicator = true  // Show on-screen anchor while auto-scrolling
     var isTrackpadMode = false
     var lastScrollTime: Date?
     var scrollDetectionWindow = [CGFloat]()
@@ -87,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Load user preferences
         isDirectionInverted = UserDefaults.standard.bool(forKey: "invertScrollDirection")
+        showActivationIndicator = UserDefaults.standard.object(forKey: "showActivationIndicator") as? Bool ?? true
         launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
         scrollSensitivity = UserDefaults.standard.double(forKey: "scrollSensitivity")
         if scrollSensitivity == 0 { scrollSensitivity = 1.0 } // Default if not set
@@ -168,6 +170,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let invertItem = NSMenuItem(title: "Invert Scrolling Direction", action: #selector(toggleDirectionInversion), keyEquivalent: "")
         invertItem.state = isDirectionInverted ? .on : .off
         menu.addItem(invertItem)
+        
+        // Add activation indicator toggle
+        let indicatorItem = NSMenuItem(title: "Show Activation Indicator", action: #selector(toggleActivationIndicator), keyEquivalent: "")
+        indicatorItem.state = showActivationIndicator ? .on : .off
+        menu.addItem(indicatorItem)
         
         // Add launch at login toggle
         let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
@@ -309,6 +316,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // to the Windows auto-scroll anchor.
     func showOriginIndicator(at point: NSPoint) {
         hideOriginIndicator()
+        guard showActivationIndicator else { return }
 
         let size: CGFloat = 36
         let frame = NSRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
@@ -565,6 +573,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             // For all other clicks, stop auto-scroll
             self.stopAutoScroll()
+        }
+    }
+
+    @objc func toggleActivationIndicator() {
+        showActivationIndicator = !showActivationIndicator
+        
+        // Save preference
+        UserDefaults.standard.set(showActivationIndicator, forKey: "showActivationIndicator")
+        
+        // Update menu item state
+        if let menu = statusItem.menu,
+           let indicatorItem = menu.items.first(where: { $0.action == #selector(toggleActivationIndicator) }) {
+            indicatorItem.state = showActivationIndicator ? .on : .off
+        }
+        
+        // Apply immediately if auto-scroll is currently active
+        if isAutoScrolling {
+            if showActivationIndicator, let point = originalPoint {
+                showOriginIndicator(at: point)
+            } else {
+                hideOriginIndicator()
+            }
         }
     }
 
