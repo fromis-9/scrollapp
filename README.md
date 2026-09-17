@@ -8,11 +8,11 @@ A macOS utility that brings Windows-style auto-scrolling to macOS. Middle-click 
 
 ## Features
 
-- **Auto-scrolling**: Activate with configurable mouse/key combinations, move cursor to control scrolling
+- **Two-axis auto-scrolling**: Move the cursor vertically, horizontally, or diagonally to control scrolling
 - **7 Activation Methods**: Choose from middle-click, modified clicks, side buttons, or double-click
 - **Trackpad Support**: Option+Scroll activation for trackpad users
 - **Adjustable Sensitivity**: Slider control from 0.2x to 3.0x speed with exponential slow-speed scaling
-- **Intuitive Controls**: Move cursor up/down to control scroll direction and speed
+- **Intuitive Controls**: Move the cursor in any direction to control scroll direction and speed
 - **Customizable Direction**: Option to invert scrolling direction based on preference
 - **Launch at Login**: Optional automatic startup
 - **Menu Bar Integration**: Quick access via status menu in the menu bar
@@ -48,7 +48,7 @@ Choose your preferred activation method from the menu bar:
 Use your chosen method to toggle auto-scroll on/off, or click any other mouse button to exit.
 
 **With Trackpad:**
-- Hold Option key and perform a two-finger scroll to activate auto-scroll
+- Hold Option and perform a vertical or horizontal two-finger scroll to activate auto-scroll
 - Click anywhere to exit auto-scroll mode
 
 ### Controlling Scrolling
@@ -56,6 +56,8 @@ Use your chosen method to toggle auto-scroll on/off, or click any other mouse bu
 Once auto-scroll is activated:
 - Move cursor **up** to scroll **up**
 - Move cursor **down** to scroll **down**
+- Move cursor **left** or **right** to scroll horizontally
+- Move cursor diagonally to scroll both axes at once
 - Move further from the center point for faster scrolling
 - Move closer to the center point for slower, more precise scrolling
 
@@ -77,7 +79,7 @@ Access additional options from the menu bar icon:
 - **Start/Stop Auto-Scroll** - Manual toggle
 - **Scroll Speed** - Sensitivity slider (0.2x - 3.0x)
 - **Activation Method** - Choose your preferred mouse/key combination
-- **Invert Scrolling Direction** - Reverse up/down behavior
+- **Invert Scrolling Direction** - Reverse scrolling on both axes
 - **Launch at Login** - Automatic startup option
 - **About Scrollapp** - App information and usage tips
 

@@ -9,6 +9,57 @@ import UserNotifications
 import ServiceManagement
 import ApplicationServices
 
+struct ScrollAmounts {
+    let horizontal: CGFloat?
+    let vertical: CGFloat?
+
+    var hasScroll: Bool {
+        horizontal != nil || vertical != nil
+    }
+}
+
+enum ScrollPhysics {
+    static func amount(
+        for displacement: CGFloat,
+        sensitivity: Double,
+        inverted: Bool
+    ) -> CGFloat? {
+        let deadZone: CGFloat = 5.0
+
+        let directionMultiplier = inverted ? 1.0 : -1.0
+        let direction = (displacement > 0 ? -1.0 : 1.0) * directionMultiplier
+
+        let distance = max(0, abs(displacement) - deadZone)
+        let acceleration = pow(distance / 50, 2.0)
+        let maxScrollSpeed: CGFloat = 30.00
+        let scrollSpeed = min(acceleration * 2.5, maxScrollSpeed)
+
+        let adjustedSensitivity: CGFloat
+        if sensitivity < 1.0 {
+            adjustedSensitivity = CGFloat(pow(sensitivity, 1.5))
+        } else {
+            adjustedSensitivity = CGFloat(sensitivity)
+        }
+
+        let finalAmount = direction * scrollSpeed * adjustedSensitivity
+        let threshold = min(0.1, adjustedSensitivity * 0.5)
+
+        return abs(finalAmount) < threshold ? nil : finalAmount
+    }
+
+    static func amounts(
+        deltaX: CGFloat,
+        deltaY: CGFloat,
+        sensitivity: Double,
+        inverted: Bool
+    ) -> ScrollAmounts {
+        ScrollAmounts(
+            horizontal: amount(for: deltaX, sensitivity: sensitivity, inverted: inverted),
+            vertical: amount(for: deltaY, sensitivity: sensitivity, inverted: inverted)
+        )
+    }
+}
+
 @main
 struct ScrollappApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -221,6 +272,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         downArrow.line(to: NSPoint(x: 12, y: 18))
         downArrow.lineWidth = 1
         downArrow.stroke()
+
+        let leftArrow = NSBezierPath()
+        leftArrow.move(to: NSPoint(x: 2, y: 10))
+        leftArrow.line(to: NSPoint(x: 0, y: 10))
+        leftArrow.line(to: NSPoint(x: 2, y: 8))
+        leftArrow.move(to: NSPoint(x: 0, y: 10))
+        leftArrow.line(to: NSPoint(x: 2, y: 12))
+        leftArrow.lineWidth = 1
+        leftArrow.stroke()
+
+        let rightArrow = NSBezierPath()
+        rightArrow.move(to: NSPoint(x: 18, y: 10))
+        rightArrow.line(to: NSPoint(x: 20, y: 10))
+        rightArrow.line(to: NSPoint(x: 18, y: 8))
+        rightArrow.move(to: NSPoint(x: 20, y: 10))
+        rightArrow.line(to: NSPoint(x: 18, y: 12))
+        rightArrow.lineWidth = 1
+        rightArrow.stroke()
         image.unlockFocus()
 
         scrollCursor = NSCursor(image: image, hotSpot: NSPoint(x: 10, y: 10))
@@ -302,46 +371,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func performScroll() {
         guard let start = originalPoint else { return }
         let current = NSEvent.mouseLocation
+        let deltaX = current.x - start.x
         let deltaY = current.y - start.y
 
-        let deadZone: CGFloat = 5.0
-        
-        // Flipped the default direction - now moving up scrolls up by default
-        let directionMultiplier = isDirectionInverted ? 1.0 : -1.0  // Inverted the multiplier
-        let direction = (deltaY > 0 ? -1.0 : 1.0) * directionMultiplier
-        
-        let distance = max(0, abs(deltaY) - deadZone)
-
-        // Quadratic acceleration: scrollSpeed grows faster as distance increases
-        let acceleration = pow(distance / 50, 2.0) // scale distance into a nice curve
-        let maxScrollSpeed: CGFloat = 30.00
-        let scrollSpeed = min(acceleration * 2.5, maxScrollSpeed) // scaled + capped
-
-        // Apply sensitivity multiplier with exponential scaling for values < 1.0
-        // This makes slower speeds MUCH slower but still usable
-        let adjustedSensitivity: CGFloat
-        if scrollSensitivity < 1.0 {
-            // Exponential scaling for slow speeds, but not too extreme
-            // 0.1 becomes ~0.03, 0.2 becomes ~0.08, 0.5 becomes ~0.35
-            adjustedSensitivity = CGFloat(pow(scrollSensitivity, 1.5))
-        } else {
-            // Linear scaling for faster speeds
-            adjustedSensitivity = CGFloat(scrollSensitivity)
-        }
-        
-        let finalAmount = direction * scrollSpeed * adjustedSensitivity
-
-        // Dynamic threshold based on sensitivity - allow very slow scrolling at low sensitivities
-        let threshold = min(0.1, adjustedSensitivity * 0.5)
-        if abs(finalAmount) < threshold {
-            return // don't scroll unless meaningful
-        }
+        let amounts = ScrollPhysics.amounts(
+            deltaX: deltaX,
+            deltaY: deltaY,
+            sensitivity: scrollSensitivity,
+            inverted: isDirectionInverted
+        )
+        guard amounts.hasScroll else { return }
 
         if let scrollEvent = CGEvent(scrollWheelEvent2Source: nil,
                                     units: .pixel,
-                                    wheelCount: 1,
-                                    wheel1: Int32(finalAmount),
-                                    wheel2: 0,
+                                    wheelCount: 2,
+                                    wheel1: Int32(amounts.vertical ?? 0),
+                                    wheel2: Int32(amounts.horizontal ?? 0),
                                     wheel3: 0) {
             scrollEvent.flags = .maskNonCoalesced
             scrollEvent.post(tap: .cgSessionEventTap)
@@ -479,7 +524,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                   let lastScrollTime = self.lastScrollTime,
                   Date().timeIntervalSince(lastScrollTime) < 1.0,
                   !self.isAutoScrolling,
-                  abs(event.deltaY) > 0.1 else { return }
+                  abs(event.deltaX) > 0.1 || abs(event.deltaY) > 0.1 else { return }
             
             // Option + scroll detected, activate auto-scroll
             self.startTrackpadAutoScroll()
