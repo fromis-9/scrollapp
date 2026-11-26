@@ -1,48 +1,25 @@
 #!/bin/bash
+set -euo pipefail
 
-# Build script for universal Scrollapp binary
-# This creates a .app that works on both Intel and Apple Silicon Macs
+project_dir="$(cd "$(dirname "$0")/.." && pwd)"
+build_dir="${SCROLLAPP_BUILD_DIR:-$project_dir/build/universal}"
+mkdir -p "$build_dir"
+build_dir="$(cd "$build_dir" && pwd)"
 
-echo "Building Scrollapp as Universal Binary..."
+# Build every executable in the app bundle for both architectures.
+xcodebuild -project "$project_dir/Scrollapp.xcodeproj" -scheme Scrollapp -configuration Release \
+    -destination 'generic/platform=macOS' -derivedDataPath "$build_dir/DerivedData" \
+    "CONFIGURATION_BUILD_DIR=$build_dir" 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO "$@" build
 
-# Clean previous builds
-echo "Cleaning previous builds..."
-xcodebuild clean -project Scrollapp.xcodeproj -scheme Scrollapp
-rm -rf build
-
-# Create build directories
-mkdir -p build/intel
-mkdir -p build/arm64
-mkdir -p build/universal
-
-# Build for Intel (x86_64)
-echo "Building for Intel (x86_64)..."
-xcodebuild -project Scrollapp.xcodeproj -scheme Scrollapp -configuration Release -arch x86_64 ONLY_ACTIVE_ARCH=NO SYMROOT=build/intel build
-
-# Build for Apple Silicon (arm64)  
-echo "Building for Apple Silicon (arm64)..."
-xcodebuild -project Scrollapp.xcodeproj -scheme Scrollapp -configuration Release -arch arm64 ONLY_ACTIVE_ARCH=NO SYMROOT=build/arm64 build
-
-# Copy the app structure from one of the builds
-echo "Creating universal binary..."
-cp -R "build/arm64/Release/Scrollapp.app" "build/universal/"
-
-# Use lipo to create universal binary
-lipo -create \
-    "build/intel/Release/Scrollapp.app/Contents/MacOS/Scrollapp" \
-    "build/arm64/Release/Scrollapp.app/Contents/MacOS/Scrollapp" \
-    -output "build/universal/Scrollapp.app/Contents/MacOS/Scrollapp"
-
-echo "Universal build complete!"
-echo "The app now supports both Intel and Apple Silicon Macs"
-echo "Find your universal app in: build/universal/Scrollapp.app"
-
-# Verify the universal binary
-echo "Verifying universal binary..."
-if [ -f "build/universal/Scrollapp.app/Contents/MacOS/Scrollapp" ]; then
-    lipo -info "build/universal/Scrollapp.app/Contents/MacOS/Scrollapp"
-    file "build/universal/Scrollapp.app/Contents/MacOS/Scrollapp"
-else
-    echo "ERROR: Universal binary creation failed"
-    exit 1
-fi 
+app="$build_dir/Scrollapp.app"
+for executable in \
+    "$app/Contents/MacOS/Scrollapp" \
+    "$app/Contents/Library/LoginItems/ScrollappLoginHelper.app/Contents/MacOS/ScrollappLoginHelper"; do
+    lipo "$executable" -verify_arch arm64 x86_64
+    # Inspect the full binary, including the symbol table, without printing any matched paths.
+    if LC_ALL=C /usr/bin/grep -aEq '/Users/[^/[:cntrl:]]+/' "$executable"; then
+        printf 'Local home-folder path found in %s. Check the Release stripping settings.\n' "${executable##*/}" >&2
+        exit 1
+    fi
+done
+printf 'Universal app: %s\n' "$app"

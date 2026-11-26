@@ -6,7 +6,6 @@
 import SwiftUI
 import Cocoa
 import UserNotifications
-import ServiceManagement
 import ApplicationServices
 
 @main
@@ -20,28 +19,57 @@ struct ScrollappApp: App {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+@MainActor
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var statusItem: NSStatusItem!
     var isAutoScrolling = false
     var scrollTimer: Timer?
     var originalPoint: CGPoint?
-    var globalMonitor: Any?
-    var localMonitor: Any?
-    var mouseMoveMonitor: Any?
-    var optionKeyMonitor: Any?
+    var globalMouseMonitor: Any?
+    var localMouseMonitor: Any?
     var scrollMonitor: Any?
-    var clickMonitor: Any?
-    var scrollCursor: NSCursor?
-    var isTrackpadMode = false
-    var lastScrollTime: Date?
-    var scrollDetectionWindow = [CGFloat]()
+    var localScrollMonitor: Any?
+    private let scrollAnchor = ScrollIndicator(style: .anchor)
+    private let scrollCursor = ScrollIndicator(style: .pointer)
+    private var scrollMenuItem: NSMenuItem?
+    private var sensitivityItem: NSMenuItem?
+    private var sensitivityValueLabel: NSTextField?
+    private var heldButton: Int?
+    private var showsScrollIndicators = true
+    private var horizontalScrollingEnabled = false
+    var trackpadActivationEnabled = true
+    var keepsScrollingOnLeftClick = false
+    var hidesMenuBarIcon = false
+    private var scrollArea: ScrollArea?
+    private var scrollPosition: ScrollPosition?
+    private var scrollMotion = ScrollMotion()
+    private var doubleClick = DoubleClickActivation()
+    private var trackpadActivation = TrackpadActivation()
     var isDirectionInverted = false  // Default is now "up scrolls up"
-    var launchAtLogin = false        // Track launch at login state
     var scrollSensitivity: Double = 1.0  // Default sensitivity multiplier
+    var fixedScrollSpeed: FixedScrollSpeed = .off
     var activationMethod: ActivationMethod = .middleClick  // Default activation method
+
+    private var allowsHorizontalScrolling: Bool { horizontalScrollingEnabled && fixedScrollSpeed == .off }
+
+    enum FixedScrollSpeed: Int, CaseIterable {
+        case off = 0
+        case one = 1
+        case two = 2
+        case four = 4
+        case eight = 8
+        case sixteen = 16
+        case thirtyTwo = 32
+        case sixtyFour = 64
+        case oneHundredTwentyEight = 128
+
+        var menuTitle: String { self == .off ? "Follow Pointer" : "\(rawValue) px/s" }
+        var timerInterval: TimeInterval { self == .off ? 0.01 : 1 / Double(rawValue) }
+    }
     
     enum ActivationMethod: String, CaseIterable {
         case middleClick = "Middle Click"
+        case middleClickHold = "Middle Click (Hold)"
         case shiftMiddleClick = "Shift + Middle Click"
         case cmdMiddleClick = "Cmd + Middle Click"
         case optionMiddleClick = "Option + Middle Click"
@@ -49,23 +77,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case button5 = "Mouse Button 5"
         case doubleMiddleClick = "Double Middle Click"
         
-        var buttonNumber: Int? {
+        var buttonNumber: Int {
             switch self {
-            case .middleClick, .shiftMiddleClick, .cmdMiddleClick, .optionMiddleClick, .doubleMiddleClick:
+            case .middleClick, .middleClickHold, .shiftMiddleClick, .cmdMiddleClick, .optionMiddleClick, .doubleMiddleClick:
                 return 2
             case .button4:
                 return 3
             case .button5:
                 return 4
-            }
-        }
-        
-        var requiresModifier: Bool {
-            switch self {
-            case .shiftMiddleClick, .cmdMiddleClick, .optionMiddleClick:
-                return true
-            default:
-                return false
             }
         }
         
@@ -86,9 +105,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Load user preferences
         isDirectionInverted = UserDefaults.standard.bool(forKey: "invertScrollDirection")
-        launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
-        scrollSensitivity = UserDefaults.standard.double(forKey: "scrollSensitivity")
-        if scrollSensitivity == 0 { scrollSensitivity = 1.0 } // Default if not set
+        let launchedAtLogin = LoginAtStartup.wasLaunchedAtLogin
+        showsScrollIndicators = UserDefaults.standard.object(forKey: "showsScrollAnchor") as? Bool ?? true
+        horizontalScrollingEnabled = UserDefaults.standard.bool(forKey: "horizontalScrollingEnabled")
+        trackpadActivationEnabled = UserDefaults.standard.object(forKey: "trackpadActivationEnabled") as? Bool ?? true
+        keepsScrollingOnLeftClick = UserDefaults.standard.bool(forKey: "keepsScrollingOnLeftClick")
+        hidesMenuBarIcon = UserDefaults.standard.bool(forKey: "hidesMenuBarIcon")
+        fixedScrollSpeed = FixedScrollSpeed(rawValue: UserDefaults.standard.integer(forKey: "fixedScrollSpeed")) ?? .off
+        let savedSensitivity = UserDefaults.standard.double(forKey: "scrollSensitivity")
+        if ScrollMotion.sensitivityRange.contains(savedSensitivity) {
+            scrollSensitivity = savedSensitivity
+        }
         
         // Load activation method
         if let savedMethod = UserDefaults.standard.string(forKey: "activationMethod"),
@@ -96,56 +123,98 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             activationMethod = method
         }
         
-        // Set initial launch at login state based on saved preference
-        updateLoginItemState()
-        
-        // Check and request Accessibility permissions
-        checkAccessibilityPermissions()
+        if !isLaunchingForUITests {
+            do {
+                try LoginAtStartup.restoreRegistration()
+            } catch {
+                NSLog("Scrollapp couldn't restore launch at login: %@", error.localizedDescription)
+            }
+            checkAccessibilityPermissions()
+        }
         
         setupMenuBar()
-        createScrollCursor()
-        setupMiddleClickListeners()
+        setupMouseMonitors()
         setupTrackpadActivation()
+        if hidesMenuBarIcon && !launchedAtLogin { revealMenuBarMenu() }
         
-        // Request notification permission
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        if !isLaunchingForUITests {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
+    }
+
+    private var isLaunchingForUITests: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["SCROLLAPP_UI_TESTING"] == "1"
+        #else
+        false
+        #endif
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         stopAutoScroll()
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if hidesMenuBarIcon { revealMenuBarMenu() }
+        return false
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        if menu === statusItem?.menu, hidesMenuBarIcon { statusItem.isVisible = false }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        menu.item(withTitle: "Launch at Login")?.state = LoginAtStartup.menuState
+    }
+
     func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "arrow.up.and.down.circle", accessibilityDescription: "Scrollapp")
-        }
         
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Start/Stop Auto-Scroll", action: #selector(toggleTrackpadMode), keyEquivalent: ""))
+        menu.delegate = self
+        let scrollItem = NSMenuItem(title: "Start Auto-Scroll", action: #selector(toggleTrackpadMode), keyEquivalent: "")
+        scrollItem.target = self
+        scrollMenuItem = scrollItem
+        menu.addItem(scrollItem)
         menu.addItem(NSMenuItem.separator())
         
-        // Add sensitivity slider
-        let sensitivityItem = NSMenuItem(title: String(format: "Scroll Speed: %.1fx", scrollSensitivity), action: nil, keyEquivalent: "")
-        let sensitivityView = NSView(frame: NSRect(x: 0, y: 0, width: 250, height: 30))
-        
-        let slider = NSSlider(frame: NSRect(x: 20, y: 5, width: 150, height: 20))
-        slider.minValue = 0.2
-        slider.maxValue = 3.0
+        let sensitivityItem = NSMenuItem(title: "Pointer Sensitivity", action: nil, keyEquivalent: "")
+        let sensitivityView = NSView(frame: NSRect(x: 0, y: 0, width: 224, height: 47))
+        let sensitivityLabel = NSTextField(labelWithString: sensitivityItem.title)
+        sensitivityLabel.frame = NSRect(x: 22, y: 25, width: 145, height: 17)
+
+        let slider = NSSlider(frame: NSRect(x: 19, y: 5, width: 186, height: 18))
+        slider.setAccessibilityLabel(sensitivityItem.title)
+        slider.minValue = ScrollMotion.sensitivityRange.lowerBound
+        slider.maxValue = ScrollMotion.sensitivityRange.upperBound
         slider.doubleValue = scrollSensitivity
         slider.target = self
         slider.action = #selector(sensitivityChanged(_:))
         slider.isContinuous = true
         
-        let label = NSTextField(labelWithString: String(format: "%.1fx", scrollSensitivity))
-        label.frame = NSRect(x: 180, y: 5, width: 50, height: 20)
-        label.alignment = .center
-        label.tag = 100 // Tag to find it later
-        
+        let valueLabel = NSTextField(labelWithString: String(format: "%.1fx", scrollSensitivity))
+        valueLabel.frame = NSRect(x: 157, y: 25, width: 45, height: 17)
+        valueLabel.alignment = .right
+        sensitivityView.addSubview(sensitivityLabel)
+        sensitivityView.addSubview(valueLabel)
         sensitivityView.addSubview(slider)
-        sensitivityView.addSubview(label)
         sensitivityItem.view = sensitivityView
+        sensitivityItem.isHidden = fixedScrollSpeed != .off
+        self.sensitivityItem = sensitivityItem
+        sensitivityValueLabel = valueLabel
         menu.addItem(sensitivityItem)
+
+        let fixedSpeedItem = NSMenuItem(title: "Scroll Mode", action: nil, keyEquivalent: "")
+        let fixedSpeedMenu = NSMenu()
+        for speed in FixedScrollSpeed.allCases {
+            let item = NSMenuItem(title: speed.menuTitle, action: #selector(selectFixedScrollSpeed(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = speed.rawValue
+            item.state = speed == fixedScrollSpeed ? .on : .off
+            fixedSpeedMenu.addItem(item)
+        }
+        fixedSpeedItem.submenu = fixedSpeedMenu
+        menu.addItem(fixedSpeedItem)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -156,196 +225,258 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         for method in ActivationMethod.allCases {
             let methodItem = NSMenuItem(title: method.rawValue, action: #selector(selectActivationMethod(_:)), keyEquivalent: "")
+            methodItem.target = self
             methodItem.representedObject = method
             methodItem.state = (method == activationMethod) ? .on : .off
             activationMenu.addItem(methodItem)
         }
-        
+        activationMenu.addItem(NSMenuItem.separator())
+        addToggle("Option + Scroll", action: #selector(toggleTrackpadActivation(_:)),
+                  enabled: trackpadActivationEnabled, to: activationMenu)
         menu.addItem(activationItem)
-        
-        // Add inverted direction toggle option - reworded to match new default
-        let invertItem = NSMenuItem(title: "Invert Scrolling Direction", action: #selector(toggleDirectionInversion), keyEquivalent: "")
-        invertItem.state = isDirectionInverted ? .on : .off
-        menu.addItem(invertItem)
-        
-        // Add launch at login toggle
-        let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
-        launchItem.state = launchAtLogin ? .on : .off
-        menu.addItem(launchItem)
+
+        let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
+        let settingsMenu = NSMenu()
+        settingsMenu.delegate = self
+        addToggle("Horizontal Scrolling", action: #selector(toggleHorizontalScrolling(_:)),
+                  enabled: horizontalScrollingEnabled, to: settingsMenu)
+        addToggle("Invert Scrolling Direction", action: #selector(toggleDirectionInversion(_:)),
+                  enabled: isDirectionInverted, to: settingsMenu)
+        addToggle("Show Auto-Scroll Indicators", action: #selector(toggleScrollIndicators(_:)),
+                  enabled: showsScrollIndicators, to: settingsMenu)
+        addToggle("Keep Scrolling on Left Click", action: #selector(toggleKeepsScrollingOnLeftClick(_:)),
+                  enabled: keepsScrollingOnLeftClick, to: settingsMenu)
+        settingsMenu.addItem(NSMenuItem.separator())
+        addToggle("Hide Menu Bar Icon", action: #selector(toggleMenuBarVisibility(_:)),
+                  enabled: hidesMenuBarIcon, to: settingsMenu)
+        let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
+        launchItem.target = self
+        launchItem.state = LoginAtStartup.menuState
+        settingsMenu.addItem(launchItem)
+        let permissionsItem = NSMenuItem(title: "Permissions…", action: #selector(showPermissions), keyEquivalent: "")
+        permissionsItem.target = self
+        settingsMenu.addItem(permissionsItem)
+        settingsItem.submenu = settingsMenu
+        menu.addItem(settingsItem)
         
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "About Scrollapp", action: #selector(showAbout), keyEquivalent: ""))
-        
-        let methodsMenu = NSMenu()
-        let methodsItem = NSMenuItem(title: "Activation Methods", action: nil, keyEquivalent: "")
-        methodsItem.submenu = methodsMenu
-        
-        methodsMenu.addItem(NSMenuItem(title: "Mouse - Configurable button/modifier (see Activation Method)", action: nil, keyEquivalent: ""))
-        methodsMenu.addItem(NSMenuItem(title: "Option + Scroll - Start auto-scroll (trackpad)", action: nil, keyEquivalent: ""))
-        methodsMenu.addItem(NSMenuItem(title: "Menu Bar - Use the menu option above", action: nil, keyEquivalent: ""))
-        methodsMenu.addItem(NSMenuItem(title: "Click - Stop auto-scroll", action: nil, keyEquivalent: ""))
-        
-        menu.addItem(methodsItem)
-        
+        let aboutItem = NSMenuItem(title: "About Scrollapp", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+        let updatesItem = NSMenuItem(title: "View Latest Release…", action: #selector(openReleases), keyEquivalent: "")
+        updatesItem.target = self
+        menu.addItem(updatesItem)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
         statusItem.menu = menu
+        statusItem.isVisible = !hidesMenuBarIcon
+        updateScrollFeedback()
     }
 
-    func createScrollCursor() {
-        let size = CGSize(width: 20, height: 20)
-        let image = NSImage(size: size)
-
-        image.lockFocus()
-        NSColor.clear.set()
-        NSRect(x: 0, y: 0, width: size.width, height: size.height).fill()
-
-        NSColor.systemBlue.withAlphaComponent(0.6).setFill()
-        NSBezierPath(ovalIn: NSRect(x: 4, y: 4, width: 12, height: 12)).fill()
-
-        NSColor.white.setStroke()
-        let upArrow = NSBezierPath()
-        upArrow.move(to: NSPoint(x: 10, y: 2))
-        upArrow.line(to: NSPoint(x: 10, y: 0))
-        upArrow.line(to: NSPoint(x: 8, y: 2))
-        upArrow.move(to: NSPoint(x: 10, y: 0))
-        upArrow.line(to: NSPoint(x: 12, y: 2))
-        upArrow.lineWidth = 1
-        upArrow.stroke()
-
-        let downArrow = NSBezierPath()
-        downArrow.move(to: NSPoint(x: 10, y: 18))
-        downArrow.line(to: NSPoint(x: 10, y: 20))
-        downArrow.line(to: NSPoint(x: 8, y: 18))
-        downArrow.move(to: NSPoint(x: 10, y: 20))
-        downArrow.line(to: NSPoint(x: 12, y: 18))
-        downArrow.lineWidth = 1
-        downArrow.stroke()
-        image.unlockFocus()
-
-        scrollCursor = NSCursor(image: image, hotSpot: NSPoint(x: 10, y: 10))
+    private func addToggle(_ title: String, action: Selector, enabled: Bool, to menu: NSMenu) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.state = enabled ? .on : .off
+        menu.addItem(item)
     }
 
-    var lastClickTime: Date?
-    var clickCount = 0
+    private func revealMenuBarMenu() {
+        guard let statusItem, !statusItem.isVisible else { return }
+        statusItem.isVisible = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, hidesMenuBarIcon, statusItem.isVisible,
+                  let menu = statusItem.menu, let button = statusItem.button else { return }
+            menu.popUp(positioning: nil, at: .zero, in: button)
+            if hidesMenuBarIcon { statusItem.isVisible = false }
+        }
+    }
 
-    func setupMiddleClickListeners() {
-        // Remove existing monitors
-        if let monitor = globalMonitor {
-            NSEvent.removeMonitor(monitor)
+    private func setupMouseMonitors() {
+        let activationEvents: NSEvent.EventTypeMask = [.otherMouseDown, .otherMouseUp]
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: activationEvents.union([.leftMouseDown, .rightMouseDown])
+        ) { [weak self] event in
+            self?.handleMouseEvent(event)
         }
-        if let monitor = localMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-        
-        guard let buttonNumber = activationMethod.buttonNumber else { return }
-        
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
-            guard let self = self, event.buttonNumber == buttonNumber else { return }
-            self.handleMouseClick(event, at: NSEvent.mouseLocation)
-        }
-
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
-            guard let self = self, event.buttonNumber == buttonNumber else { return event }
-            self.handleMouseClick(event, at: NSEvent.mouseLocation)
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: activationEvents) { [weak self] event in
+            self?.handleMouseEvent(event)
             return event
         }
     }
-    
-    func handleMouseClick(_ event: NSEvent, at location: NSPoint) {
-        // Check if this activation method requires modifier keys
-        if activationMethod.requiresModifier {
-            guard let requiredModifier = activationMethod.modifierFlags,
-                  event.modifierFlags.contains(requiredModifier) else { return }
+
+    private func handleMouseEvent(_ event: NSEvent) {
+        var isLink = false
+        if !isAutoScrolling, activationMethod == .middleClick,
+           event.type == .otherMouseDown, event.buttonNumber == activationMethod.buttonNumber,
+           let point = event.cgEvent?.location {
+            isLink = LinkHitTest.containsLink(at: point)
         }
-        
-        // Handle double-click detection for double middle click
-        if activationMethod == .doubleMiddleClick {
-            let now = Date()
-            if let lastClick = lastClickTime, now.timeIntervalSince(lastClick) < 0.5 {
-                clickCount += 1
-                if clickCount >= 2 {
-                    // Double click detected
-                    clickCount = 0
-                    lastClickTime = nil
-                    isAutoScrolling ? stopAutoScroll() : startAutoScroll(at: location)
-                }
-            } else {
-                clickCount = 1
-                lastClickTime = now
-                // Reset click count after timeout
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    self?.clickCount = 0
-                    self?.lastClickTime = nil
-                }
-            }
+        handleMouseButton(event.buttonNumber, type: event.type, modifiers: event.modifierFlags,
+                          timestamp: event.timestamp, at: NSEvent.mouseLocation, isLink: isLink)
+    }
+
+    func handleMouseButton(_ button: Int, type: NSEvent.EventType, modifiers: NSEvent.ModifierFlags,
+                           timestamp: TimeInterval, at location: NSPoint, isLink: Bool = false) {
+        if type == .otherMouseUp {
+            if button == heldButton { stopAutoScroll() }
+            return
+        }
+
+        guard type == .otherMouseDown, button == activationMethod.buttonNumber else {
+            if isAutoScrolling && (type != .leftMouseDown || !keepsScrollingOnLeftClick) { stopAutoScroll() }
+            return
+        }
+
+        if !isAutoScrolling, activationMethod == .middleClick, isLink { return }
+
+        if let requiredModifier = activationMethod.modifierFlags,
+           !modifiers.contains(requiredModifier) { return }
+
+        if activationMethod == .middleClickHold {
+            startAutoScroll(at: location, holding: button)
+            return
+        }
+
+        if activationMethod == .doubleMiddleClick,
+           !doubleClick.registerClick(at: timestamp, interval: NSEvent.doubleClickInterval) { return }
+
+        if isAutoScrolling {
+            stopAutoScroll()
         } else {
-            // Single click activation
-            isAutoScrolling ? stopAutoScroll() : startAutoScroll(at: location)
+            startAutoScroll(at: location)
         }
     }
 
-    func startAutoScroll(at point: NSPoint) {
+    func startAutoScroll(at point: NSPoint, holding button: Int? = nil) {
         stopAutoScroll()
         originalPoint = point
+        scrollPosition = ScrollPosition(at: point)
+        heldButton = button
         isAutoScrolling = true
-        NSCursor.hide()
-        scrollCursor?.set()
-
-        scrollTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] _ in
-            self?.performScroll()
-            self?.scrollCursor?.set() // keep forcing cursor
-        }
-        RunLoop.current.add(scrollTimer!, forMode: .common)
+        updateScrollFeedback()
+        scheduleScrollTimer()
+        if fixedScrollSpeed != .off { performScroll() }
     }
 
-    func performScroll() {
-        guard let start = originalPoint else { return }
-        let current = NSEvent.mouseLocation
-        let deltaY = current.y - start.y
+    private func scheduleScrollTimer() {
+        scrollTimer?.invalidate()
+        let timer = Timer(timeInterval: fixedScrollSpeed.timerInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.performScroll() }
+        }
+        scrollTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
 
-        let deadZone: CGFloat = 5.0
-        
-        // Flipped the default direction - now moving up scrolls up by default
-        let directionMultiplier = isDirectionInverted ? 1.0 : -1.0  // Inverted the multiplier
-        let direction = (deltaY > 0 ? -1.0 : 1.0) * directionMultiplier
-        
-        let distance = max(0, abs(deltaY) - deadZone)
-
-        // Quadratic acceleration: scrollSpeed grows faster as distance increases
-        let acceleration = pow(distance / 50, 2.0) // scale distance into a nice curve
-        let maxScrollSpeed: CGFloat = 30.00
-        let scrollSpeed = min(acceleration * 2.5, maxScrollSpeed) // scaled + capped
-
-        // Apply sensitivity multiplier with exponential scaling for values < 1.0
-        // This makes slower speeds MUCH slower but still usable
-        let adjustedSensitivity: CGFloat
-        if scrollSensitivity < 1.0 {
-            // Exponential scaling for slow speeds, but not too extreme
-            // 0.1 becomes ~0.03, 0.2 becomes ~0.08, 0.5 becomes ~0.35
-            adjustedSensitivity = CGFloat(pow(scrollSensitivity, 1.5))
+    func performScroll(at pointer: CGPoint = NSEvent.mouseLocation) {
+        guard originalPoint != nil else { return }
+        let pixels: ScrollMotion.Delta
+        if fixedScrollSpeed == .off {
+            guard let origin = scrollPosition?.origin(at: pointer, horizontalEnabled: allowsHorizontalScrolling) else {
+                return
+            }
+            if scrollArea?.anchor != origin {
+                scrollArea = ScrollArea(anchor: origin, screens: NSScreen.screens.map(\.frame))
+            }
+            let displacement = CGPoint(x: pointer.x - origin.x, y: pointer.y - origin.y)
+            pixels = scrollMotion.pixelDelta(displacement: displacement, sensitivity: scrollSensitivity,
+                                             inverted: isDirectionInverted,
+                                             horizontalEnabled: allowsHorizontalScrolling, area: scrollArea)
+            scrollCursor.move(to: pointer)
+            scrollCursor.updateDirection(pixels.direction)
         } else {
-            // Linear scaling for faster speeds
-            adjustedSensitivity = CGFloat(scrollSensitivity)
+            let direction = isDirectionInverted ? 1 : -1
+            pixels = ScrollMotion.Delta(vertical: Int32(direction), horizontal: 0,
+                                        direction: ScrollDirection(vertical: direction))
+            scrollAnchor.updateDirection(pixels.direction)
         }
-        
-        let finalAmount = direction * scrollSpeed * adjustedSensitivity
-
-        // Dynamic threshold based on sensitivity - allow very slow scrolling at low sensitivities
-        let threshold = min(0.1, adjustedSensitivity * 0.5)
-        if abs(finalAmount) < threshold {
-            return // don't scroll unless meaningful
-        }
+        guard pixels.vertical != 0 || pixels.horizontal != 0 else { return }
 
         if let scrollEvent = CGEvent(scrollWheelEvent2Source: nil,
                                     units: .pixel,
-                                    wheelCount: 1,
-                                    wheel1: Int32(finalAmount),
-                                    wheel2: 0,
+                                    wheelCount: allowsHorizontalScrolling ? 2 : 1,
+                                    wheel1: pixels.vertical,
+                                    wheel2: pixels.horizontal,
                                     wheel3: 0) {
             scrollEvent.flags = .maskNonCoalesced
-            scrollEvent.post(tap: .cgSessionEventTap)
+            postScrollEvent(scrollEvent)
         }
+    }
+
+    func postScrollEvent(_ event: CGEvent) {
+        event.post(tap: .cgSessionEventTap)
+    }
+
+    private func updateScrollFeedback() {
+        let symbol = isAutoScrolling ? "arrow.up.and.down.circle.fill" : "arrow.up.and.down.circle"
+        let label = isAutoScrolling ? "Scrollapp, auto-scroll active" : "Scrollapp"
+        statusItem?.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        statusItem?.button?.contentTintColor = isAutoScrolling ? .systemGreen : nil
+        scrollMenuItem?.title = isAutoScrolling ? "Stop Auto-Scroll" : "Start Auto-Scroll"
+
+        if let point = originalPoint, showsScrollIndicators {
+            if fixedScrollSpeed == .off {
+                scrollAnchor.hide()
+                scrollCursor.show(at: NSEvent.mouseLocation, horizontalEnabled: allowsHorizontalScrolling)
+            } else {
+                scrollCursor.hide()
+                scrollAnchor.show(at: point, horizontalEnabled: false)
+            }
+        } else {
+            scrollAnchor.hide()
+            scrollCursor.hide()
+        }
+    }
+
+    @objc private func toggleHorizontalScrolling(_ sender: NSMenuItem) {
+        horizontalScrollingEnabled.toggle()
+        UserDefaults.standard.set(horizontalScrollingEnabled, forKey: "horizontalScrollingEnabled")
+        sender.state = horizontalScrollingEnabled ? .on : .off
+        scrollMotion = ScrollMotion()
+        scrollCursor.update(horizontalEnabled: allowsHorizontalScrolling)
+    }
+
+    @objc private func selectFixedScrollSpeed(_ sender: NSMenuItem) {
+        guard let speed = FixedScrollSpeed(rawValue: sender.tag), speed != fixedScrollSpeed else { return }
+        fixedScrollSpeed = speed
+        sensitivityItem?.isHidden = speed != .off
+        UserDefaults.standard.set(speed.rawValue, forKey: "fixedScrollSpeed")
+        for item in sender.menu?.items ?? [] {
+            item.state = item === sender ? .on : .off
+        }
+        if isAutoScrolling {
+            scrollMotion = ScrollMotion()
+            updateScrollFeedback()
+            scheduleScrollTimer()
+        }
+    }
+
+    @objc private func toggleScrollIndicators(_ sender: NSMenuItem) {
+        showsScrollIndicators.toggle()
+        UserDefaults.standard.set(showsScrollIndicators, forKey: "showsScrollAnchor")
+        sender.state = showsScrollIndicators ? .on : .off
+        updateScrollFeedback()
+    }
+
+    @objc private func toggleTrackpadActivation(_ sender: NSMenuItem) {
+        trackpadActivationEnabled.toggle()
+        UserDefaults.standard.set(trackpadActivationEnabled, forKey: "trackpadActivationEnabled")
+        sender.state = trackpadActivationEnabled ? .on : .off
+        trackpadActivation = TrackpadActivation()
+    }
+
+    @objc private func toggleKeepsScrollingOnLeftClick(_ sender: NSMenuItem) {
+        keepsScrollingOnLeftClick.toggle()
+        UserDefaults.standard.set(keepsScrollingOnLeftClick, forKey: "keepsScrollingOnLeftClick")
+        sender.state = keepsScrollingOnLeftClick ? .on : .off
+    }
+
+    @objc private func toggleMenuBarVisibility(_ sender: NSMenuItem) {
+        hidesMenuBarIcon.toggle()
+        UserDefaults.standard.set(hidesMenuBarIcon, forKey: "hidesMenuBarIcon")
+        sender.state = hidesMenuBarIcon ? .on : .off
+        statusItem?.isVisible = !hidesMenuBarIcon
     }
 
     @objc func toggleTrackpadMode() {
@@ -357,31 +488,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func startTrackpadAutoScroll() {
-        stopAutoScroll() // Clear any existing state
-        
-        isTrackpadMode = true
-        originalPoint = NSEvent.mouseLocation
-        isAutoScrolling = true
-        
-        // Show custom cursor
-        NSCursor.hide()
-        scrollCursor?.set()
-        
-        // Start timer for scrolling
-        scrollTimer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { [weak self] _ in
-            self?.performScroll()
-            self?.scrollCursor?.set() // keep forcing cursor
-        }
-        RunLoop.current.add(scrollTimer!, forMode: .common)
-        
-        // Show feedback to user
+        startAutoScroll(at: NSEvent.mouseLocation)
         showTrackpadModeNotification()
     }
 
     func showTrackpadModeNotification() {
         let content = UNMutableNotificationContent()
         content.title = "Auto-Scroll Active"
-        content.body = "Move cursor to control scrolling. Click anywhere to exit."
+        content.body = fixedScrollSpeed == .off
+            ? "Move the pointer to control scrolling. Click to stop."
+            : "Scrolling at \(fixedScrollSpeed.menuTitle). Use your activation shortcut again to stop."
         content.sound = UNNotificationSound.default
         
         let request = UNNotificationRequest(
@@ -400,183 +516,147 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func sensitivityChanged(_ sender: NSSlider) {
         scrollSensitivity = sender.doubleValue
         UserDefaults.standard.set(scrollSensitivity, forKey: "scrollSensitivity")
-        
-        // Update the label and menu item title
-        if let sensitivityItem = statusItem.menu?.items.first(where: { $0.title.starts(with: "Scroll Speed") }) {
-            sensitivityItem.title = String(format: "Scroll Speed: %.1fx", scrollSensitivity)
-            
-            if let view = sensitivityItem.view,
-               let label = view.viewWithTag(100) as? NSTextField {
-                label.stringValue = String(format: "%.1fx", scrollSensitivity)
-            }
-        }
+        sensitivityValueLabel?.stringValue = String(format: "%.1fx", scrollSensitivity)
     }
     
     @objc func selectActivationMethod(_ sender: NSMenuItem) {
         guard let method = sender.representedObject as? ActivationMethod else { return }
-        
+
+        if method != activationMethod, heldButton != nil { stopAutoScroll() }
         activationMethod = method
+        doubleClick = DoubleClickActivation()
         UserDefaults.standard.set(method.rawValue, forKey: "activationMethod")
-        
-        // Update menu item states
-        if let activationItem = statusItem.menu?.items.first(where: { $0.title == "Activation Method" }),
-           let submenu = activationItem.submenu {
-            for item in submenu.items {
-                item.state = (item.representedObject as? ActivationMethod == method) ? .on : .off
-            }
+        for item in sender.menu?.items ?? [] {
+            guard let choice = item.representedObject as? ActivationMethod else { continue }
+            item.state = choice == method ? .on : .off
         }
-        
-        // Restart mouse listeners with new configuration
-        setupMiddleClickListeners()
     }
 
     @objc func showAbout() {
-        let alert = NSAlert()
-        alert.messageText = "About Scrollapp"
-        
-        alert.informativeText = "Scrollapp enables auto-scrolling on macOS.\n\nHow to activate:\n• Mouse: Configurable button/modifier (see Activation Method in menu)\n• Trackpad: Hold Option key and scroll with two fingers\n• Menu: Use the menu bar icon and select 'Start/Stop Auto-Scroll'\n\nHow to stop:\n• Click anywhere to exit auto-scroll mode\n• Use your configured activation method again\n\nWhile active, move your cursor to control scroll speed and direction.\n\nAdjust scroll speed using the slider in the menu bar (0.2x - 3.0x).\nSpeeds below 1.0x are exponentially slower for fine control.\n\nConfigure your preferred activation method in the 'Activation Method' submenu to avoid conflicts with browser link opening."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        let alignment = NSMutableParagraphStyle()
+        alignment.alignment = .center
+        let credits = NSMutableAttributedString(
+            string: """
+            Auto-scroll for macOS. In Scroll Mode, choose Follow Pointer or a constant speed.
+
+            Website  ·  GitHub
+            """,
+            attributes: [.paragraphStyle: alignment]
+        )
+        for (title, address) in [("Website", "https://scrollapp.app/"),
+                                 ("GitHub", "https://github.com/fromis-9/scrollapp")] {
+            guard let url = URL(string: address) else { continue }
+            credits.addAttribute(.link, value: url, range: (credits.string as NSString).range(of: title))
+        }
+        let application = NSApplication.shared
+        if #available(macOS 14.0, *) {
+            application.activate()
+        } else {
+            application.activate(ignoringOtherApps: true)
+        }
+        application.orderFrontStandardAboutPanel(options: [.credits: credits])
     }
 
     @objc func quitApp() {
         NSApplication.shared.terminate(nil)
     }
 
+    @objc private func openReleases() {
+        guard let url = URL(string: "https://github.com/fromis-9/scrollapp/releases/latest") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     func stopAutoScroll() {
         scrollTimer?.invalidate()
         scrollTimer = nil
-        NSCursor.unhide()
+        let wasScrolling = isAutoScrolling
         isAutoScrolling = false
-        isTrackpadMode = false
         originalPoint = nil
+        scrollArea = nil
+        scrollPosition = nil
+        heldButton = nil
+        scrollMotion = ScrollMotion()
+        doubleClick = DoubleClickActivation()
+        if wasScrolling { updateScrollFeedback() }
     }
 
     func setupTrackpadActivation() {
-        // Detect Option key via flagsChanged
-        optionKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            guard let self = self else { return }
-            
-            // Detect Option key
-            let optionKeyFlag = NSEvent.ModifierFlags.option
-            
-            // If Option key is pressed and we're not already scrolling
-            if event.modifierFlags.contains(optionKeyFlag) && !self.isAutoScrolling {
-                // Start a timer to detect if two-finger scroll happens while Option is pressed
-                self.lastScrollTime = Date()
-                
-                // If we detect a scroll within 1 second of Option press, activate auto-scroll
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                    self?.lastScrollTime = nil
-                }
-            }
-        }
-        
-        // Detect two-finger scroll while Option is pressed
         scrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self = self,
-                  let lastScrollTime = self.lastScrollTime,
-                  Date().timeIntervalSince(lastScrollTime) < 1.0,
-                  !self.isAutoScrolling,
-                  abs(event.deltaY) > 0.1 else { return }
-            
-            // Option + scroll detected, activate auto-scroll
-            self.startTrackpadAutoScroll()
+            self?.handleTrackpadScroll(event)
         }
-        
-        // Monitor for clicks to exit auto-scroll mode
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
-            guard let self = self, self.isAutoScrolling else { return }
-            
-            // Don't stop auto-scroll for the configured activation button
-            if event.type == .otherMouseDown,
-               let activationButtonNumber = self.activationMethod.buttonNumber,
-               event.buttonNumber == activationButtonNumber {
-                return // Skip - let the activation method handler deal with it
-            }
-            
-            // For all other clicks, stop auto-scroll
-            self.stopAutoScroll()
+        localScrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            self?.handleTrackpadScroll(event)
+            return event
         }
     }
 
-    @objc func toggleDirectionInversion() {
-        // Toggle the inversion state
+    private func handleTrackpadScroll(_ event: NSEvent) {
+        guard trackpadActivationEnabled else { return }
+        if trackpadActivation.shouldActivate(phase: event.phase, momentumPhase: event.momentumPhase,
+                                           modifiers: event.modifierFlags,
+                                           hasPreciseDeltas: event.hasPreciseScrollingDeltas,
+                                           displacement: CGPoint(x: event.scrollingDeltaX, y: event.scrollingDeltaY),
+                                           horizontalEnabled: allowsHorizontalScrolling,
+                                           isAutoScrolling: isAutoScrolling) {
+            startTrackpadAutoScroll()
+        }
+    }
+
+    @objc private func toggleDirectionInversion(_ sender: NSMenuItem) {
         isDirectionInverted = !isDirectionInverted
-        
-        // Save preference
         UserDefaults.standard.set(isDirectionInverted, forKey: "invertScrollDirection")
-        
-        // Update menu item state
-        if let menu = statusItem.menu,
-           let invertItem = menu.items.first(where: { $0.action == #selector(toggleDirectionInversion) }) {
-            invertItem.state = isDirectionInverted ? .on : .off
-        }
-        
-        // No notification - removed
+        sender.state = isDirectionInverted ? .on : .off
     }
 
-    @objc func toggleLaunchAtLogin() {
-        launchAtLogin = !launchAtLogin
-        UserDefaults.standard.set(launchAtLogin, forKey: "launchAtLogin")
-        updateLoginItemState()
-        
-        // Update menu item state
-        if let launchItem = statusItem.menu?.items.first(where: { $0.title == "Launch at Login" }) {
-            launchItem.state = launchAtLogin ? .on : .off
+    @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
+        let enabled = LoginAtStartup.menuState == .off
+        do {
+            try LoginAtStartup.setEnabled(enabled)
+            if enabled, LoginAtStartup.menuState == .mixed {
+                showLoginMessage("Allow Scrollapp to Open at Login",
+                                 detail: "Approve Scrollapp in System Settings under General > Login Items.")
+            }
+        } catch {
+            showLoginMessage("Couldn’t Change Launch at Login", detail: error.localizedDescription)
         }
+        sender.state = LoginAtStartup.menuState
     }
 
-    func updateLoginItemState() {
-        if #available(macOS 13.0, *) {
-            // Use the newer ServiceManagement API for macOS 13+
-            let service = SMAppService.mainApp
-            do {
-                if launchAtLogin {
-                    if service.status != .enabled {
-                        try service.register()
-                    }
-                } else {
-                    if service.status == .enabled {
-                        try service.unregister()
-                    }
-                }
-            } catch {
-                print("Failed to update login item: \(error.localizedDescription)")
-            }
-        } else {
-            // Use the older SMLoginItemSetEnabled API for macOS 11.0-12.x
-            if let bundleIdentifier = Bundle.main.bundleIdentifier {
-                let success = SMLoginItemSetEnabled(bundleIdentifier as CFString, launchAtLogin)
-                if !success {
-                    print("Failed to update login item using legacy API")
-                }
-            }
-        }
+    private func showLoginMessage(_ title: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.runModal()
     }
-    
+
     func checkAccessibilityPermissions() {
-        // Check if we have Accessibility permissions
-        let trusted = AXIsProcessTrusted()
-        
-        if !trusted {
-            // Show alert asking user to grant permissions
-            let alert = NSAlert()
-            alert.messageText = "Accessibility Permissions Required"
-            alert.informativeText = "Scrollapp needs Accessibility permissions to enable auto-scrolling.\n\nPlease:\n1. Click 'Open System Preferences'\n2. Unlock the settings if needed\n3. Check the box next to Scrollapp\n4. Restart the app"
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Open System Preferences")
-            alert.addButton(withTitle: "Skip")
-            
-            let response = alert.runModal()
-            
-            if response == .alertFirstButtonReturn {
-                // Open Accessibility preferences
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                    NSWorkspace.shared.open(url)
-                        }
-                    }
+        if !AXIsProcessTrusted() { showPermissions() }
+    }
+
+    @objc private func showPermissions() {
+        let accessibilityGranted = AXIsProcessTrusted()
+        let inputMonitoringGranted = CGPreflightListenEventAccess()
+        let alert = NSAlert()
+        alert.messageText = "Scrollapp Permissions"
+        alert.informativeText = """
+        Accessibility: \(accessibilityGranted ? "Allowed" : "Not allowed")
+        Input Monitoring: \(inputMonitoringGranted ? "Allowed" : "Not allowed")
+
+        Allow Scrollapp in Accessibility to enable auto-scrolling. If mouse or trackpad shortcuts aren’t detected, check Input Monitoring. Reopen Scrollapp after changing permissions.
+        """
+        alert.alertStyle = accessibilityGranted ? .informational : .warning
+        alert.addButton(withTitle: "Done")
+        alert.addButton(withTitle: "Open Accessibility")
+        alert.addButton(withTitle: "Open Input Monitoring")
+
+        let pane: String
+        switch alert.runModal() {
+        case .alertSecondButtonReturn: pane = "Accessibility"
+        case .alertThirdButtonReturn: pane = "ListenEvent"
+        default: return
+        }
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_\(pane)") {
+            NSWorkspace.shared.open(url)
         }
     }
 }

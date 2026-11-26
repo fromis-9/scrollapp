@@ -2,6 +2,8 @@
 DerivedData/
 *.xcuserstate
 *.xcuserdata/
+*.xcarchive/
+*.xcresult/
 
 # macOS system files
 .DS_Store
@@ -95,6 +97,16 @@ iOSInjectionProject/
 build/
 *.app
 *.dmg
+.scrollapp-dmg.*/
+
+# Local signing credentials and provisioning profiles
+*.p12
+*.pfx
+*.p8
+*.key
+*.pem
+*.mobileprovision
+*.provisionprofile
 
 # Temp files
 *.swp
@@ -105,12 +117,12 @@ build/
 *.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
 UserInterfaceState.xcuserstate
 .env
-.env.local
+.env.*
+!.env.example
 env.local
 local.properties
 
 # Extra
-Scrollapp.xcodeproj/
 xcuserdata/
 **/xcuserdata/
 **/**/xcuserdata/

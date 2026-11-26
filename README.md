@@ -2,34 +2,31 @@
 
 [![GitHub Downloads](https://img.shields.io/github/downloads/fromis-9/scrollapp/total.svg)](https://github.com/fromis-9/scrollapp/releases)
 
-A macOS utility that brings Windows-style auto-scrolling to macOS. Middle-click anywhere to enable auto-scroll mode, then move your cursor to control scrolling speed and direction.
+A macOS utility that brings Windows-style auto-scrolling to macOS. Middle-click over the page or document you want to scroll, then move your pointer to control speed and direction.
 
 <img src="img/scrollappicon.png" width="100" alt="Scrollapp Icon">
 
 ## Features
 
 - **Auto-scrolling**: Activate with configurable mouse/key combinations, move cursor to control scrolling
-- **7 Activation Methods**: Choose from middle-click, modified clicks, side buttons, or double-click
+- **8 Activation Methods**: Choose from middle-click, hold, modified clicks, side buttons, or double-click
 - **Trackpad Support**: Option+Scroll activation for trackpad users
-- **Adjustable Sensitivity**: Slider control from 0.2x to 3.0x speed with exponential slow-speed scaling
-- **Intuitive Controls**: Move cursor up/down to control scroll direction and speed
+- **Adjustable Sensitivity**: Slider control from 0.1x to 3.0x speed with exponential slow-speed scaling
+- **Constant Speed**: Start scrolling immediately at 1, 2, 4, 8, 16, 32, 64, or 128 pixels per second
+- **Visible Scroll Indicator**: Follow Pointer mode shows a transparent icon beside the pointer, with a blue arrow for the active direction. At a constant speed, the icon stays at the starting point.
+- **Optional Horizontal Scrolling**: Move left or right for sideways scrolling, or move diagonally to scroll on both axes
 - **Customizable Direction**: Option to invert scrolling direction based on preference
 - **Launch at Login**: Optional automatic startup
 - **Menu Bar Integration**: Quick access via status menu in the menu bar
 
 ## Installation
 
-1. **Download**: Download the latest release from the [Releases](https://github.com/fromis-9/scrollapp/releases) page.
-2. **Install**: Open the DMG file and drag Scrollapp to your Applications folder.
-3. **Security Override**: Since the app is distributed without Apple notarization, you'll need to manually allow it:
-   - **Method 1**: Right-click on Scrollapp.app → "Open" → "Open" in the dialog
-   - **Method 2**: If you see "can't be opened" error, go to System Settings → Privacy & Security → scroll down to find "Scrollapp was blocked" → click "Open Anyway"
-4. **Grant Permissions**:
-   - When prompted, grant Accessibility and Input Monitoring permissions.
-   - If you miss a prompt, you can grant permissions manually in System Settings:
-     - Go to `System Settings > Privacy & Security > Accessibility` and add Scrollapp.
-     - Go to `System Settings > Privacy & Security > Input Monitoring` and enable Scrollapp.
-   - You may need to restart the app after granting permissions.
+1. Download the DMG from the [latest GitHub release](https://github.com/fromis-9/scrollapp/releases/latest).
+2. Open the DMG, drag Scrollapp into **Applications**, and open it from there.
+3. Grant **Accessibility** access when prompted. On macOS Ventura or later, go to **System Settings → Privacy & Security → Accessibility**. On Big Sur or Monterey, go to **System Preferences → Security & Privacy → Privacy → Accessibility**.
+4. If macOS also prompts for **Input Monitoring**, enable Scrollapp in that section. You can check both permissions from **Settings → Permissions…** in the Scrollapp menu. Quit and reopen Scrollapp after changing permissions.
+
+To update an existing copy, choose **Quit** in the Scrollapp menu, drag the new copy into **Applications**, choose **Replace** when Finder asks, then reopen Scrollapp.
 
 ## How to Use
 
@@ -38,48 +35,72 @@ A macOS utility that brings Windows-style auto-scrolling to macOS. Middle-click 
 **With Mouse (Configurable):**
 Choose your preferred activation method from the menu bar:
 - **Middle Click** (default)
+- **Middle Click (Hold)**
 - **Shift + Middle Click**
-- **Cmd + Middle Click** 
+- **Cmd + Middle Click**
 - **Option + Middle Click**
 - **Mouse Button 4** (side button)
 - **Mouse Button 5** (side button)
 - **Double Middle Click**
 
-Use your chosen method to toggle auto-scroll on/off, or click any other mouse button to exit.
+Use your chosen method to toggle auto-scroll on and off. Clicking another mouse button also stops scrolling, except that a left click can keep it running when **Keep Scrolling on Left Click** is enabled.
+With **Middle Click (Hold)**, press and hold the middle button to scroll, then release it to stop.
+Plain **Middle Click** leaves links alone when the app exposes them through macOS Accessibility.
 
 **With Trackpad:**
 - Hold Option key and perform a two-finger scroll to activate auto-scroll
-- Click anywhere to exit auto-scroll mode
+- Turn off **Activation Method → Option + Scroll** to leave Option-scroll gestures to the current app
+- When **Horizontal Scrolling** is enabled, an Option + two-finger sideways gesture also activates it
+- Right-click or choose **Stop Auto-Scroll** in the menu bar to exit auto-scroll mode
 
-### Controlling Scrolling
+### Scroll Mode
 
-Once auto-scroll is activated:
+**Follow Pointer**
+
+Choose **Scroll Mode → Follow Pointer** to steer with the mouse.
+
 - Move cursor **up** to scroll **up**
 - Move cursor **down** to scroll **down**
-- Move further from the center point for faster scrolling
-- Move closer to the center point for slower, more precise scrolling
+- Enable **Horizontal Scrolling** to scroll left, right, or diagonally
+- Move further from the starting point for faster scrolling
+- Near the starting point, use small movements to adjust speed and direction
+- After moving farther away, move about 16 points back to reverse from your current position
+- Near the edge of a display, full speed takes less pointer travel
+
+**Constant speed**
+
+Choose a preset like **Scroll Mode → 8 px/s** (8 pixels per second). Use your activation shortcut to start scrolling down immediately, even with the pointer still. To scroll up, enable **Settings → Invert Scrolling Direction**. Use the same shortcut or choose **Stop Auto-Scroll** to stop. With **Middle Click (Hold)**, release the button to stop.
 
 ### Customization
 
-**Scroll Speed:**
-- Use the sensitivity slider in the menu (0.2x - 3.0x)
+**Pointer Sensitivity**
+
+- Use the sensitivity slider in the menu (0.1x to 3.0x). It appears in **Follow Pointer** mode.
 - Speeds below 1.0x use exponential scaling for fine control
 - Real-time adjustment with immediate feedback
 
 **Activation Method:**
-- Choose from 7 different mouse/key combinations
+- Choose from 8 different mouse/key combinations
 - Avoid conflicts with browser middle-click link opening
 - Supports modifier keys (Shift, Cmd, Option) and side buttons
 
 ### Menu Options
 
 Access additional options from the menu bar icon:
-- **Start/Stop Auto-Scroll** - Manual toggle
-- **Scroll Speed** - Sensitivity slider (0.2x - 3.0x)
-- **Activation Method** - Choose your preferred mouse/key combination
-- **Invert Scrolling Direction** - Reverse up/down behavior
-- **Launch at Login** - Automatic startup option
-- **About Scrollapp** - App information and usage tips
+- **Start Auto-Scroll** or **Stop Auto-Scroll** - Manual toggle with an active menu bar indicator
+- **Pointer Sensitivity** - Sensitivity slider in Follow Pointer mode
+- **Scroll Mode** - Choose **Follow Pointer** or a constant speed in pixels per second
+- **Activation Method** - Choose a mouse shortcut or toggle **Option + Scroll**
+- **Settings**
+  - **Horizontal Scrolling** - Enable sideways and diagonal scrolling
+  - **Invert Scrolling Direction** - Reverse scrolling on both axes
+  - **Show Auto-Scroll Indicators** - Show the click-through indicator while scrolling
+  - **Keep Scrolling on Left Click** - Left-click while auto-scroll continues
+  - **Hide Menu Bar Icon** - Reopen Scrollapp from Finder or Spotlight to bring the menu back until you dismiss it
+  - **Launch at Login** - Automatic startup option
+  - **Permissions…** - Check Accessibility and Input Monitoring and open the corresponding macOS settings
+- **About Scrollapp** - View the installed version, a quick guide to Scroll Mode, and links to the website and GitHub
+- **View Latest Release…** - Open the latest GitHub release in your browser
 
 ## System Requirements
 
@@ -89,8 +110,9 @@ Access additional options from the menu bar icon:
 
 ## Privacy & Security
 
-- **Permissions**: Scrollapp requires Input Monitoring permissions to detect mouse/trackpad events. It does not collect or transmit any personal data.
-- **Code Signing**: The app is ad-hoc signed for free distribution. While this triggers macOS security warnings, the source code is fully open and auditable on GitHub.
+- **Permissions**. Scrollapp uses Accessibility to send scroll events and detect links. Input Monitoring lets it observe mouse and trackpad gestures in other apps when macOS requires it.
+- **Data**. Scrollapp processes mouse and trackpad input on your Mac. **View Latest Release…** opens GitHub Releases in your browser.
+- **Code signing**. Official downloads are signed with an Apple Developer ID certificate.
 
 ## License
 
@@ -98,33 +120,15 @@ Access additional options from the menu bar icon:
 
 ## Building from Source
 
-To build Scrollapp from source:
+With Xcode installed, clone the repository and run the universal build script.
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/your-username/scrollapp.git
-   cd scrollapp
-   ```
+```bash
+git clone https://github.com/fromis-9/scrollapp.git
+cd scrollapp
+bash scripts/build_universal.sh CODE_SIGNING_ALLOWED=NO
+```
 
-2. **Open in Xcode:**
-   ```bash
-   open Scrollapp.xcodeproj
-   ```
-
-3. **Build the app:**
-
-   **Option A: With Apple Developer Program Account**
-   - In Xcode, select **Product** → **Archive**
-   - Click **Distribute App** → **Copy App**
-   - Choose a location to export the built app
-
-   **Option B: Without Developer Account (Free)**
-   - In Xcode, select **Product** → **Build** (⌘+B)
-   - Navigate to the build folder: **Product** → **Show Build Folder in Finder**
-   - Find your app in `Build/Products/Release/Scrollapp.app`
-   - Copy the app to your Applications folder or wherever you'd like
-
-The project is configured to build universal binaries that work on both Intel and Apple Silicon Macs.
+The build writes `build/universal/Scrollapp.app` for Intel and Apple silicon. To work in Xcode, open `Scrollapp.xcodeproj` and select the **Scrollapp** scheme. See the [build scripts](scripts/README.md) for signing options and local test packaging.
 
 ## Feedback and Contributions
 
