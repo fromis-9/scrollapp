@@ -447,6 +447,15 @@ struct ScrollappTests {
         #expect(badge.maxX < pointer.x && badge.minY > pointer.y)
         #expect(badge.origin.x == badge.origin.x.rounded() && badge.origin.y == badge.origin.y.rounded())
     }
+
+    @MainActor
+    @Test func replacementScrollCursorStaysCenteredAtTheClickPoint() {
+        let screen = CGRect(x: -800, y: -100, width: 800, height: 600)
+        let pointer = CGPoint(x: -1.25, y: -98.25)
+        let frame = ScrollIndicator.Style.pointer.frame(at: pointer, screen: screen, replacingPointer: true)
+        #expect(frame.midX == pointer.x.rounded())
+        #expect(frame.midY == pointer.y.rounded())
+    }
 }
 
 private final class RecordingAppDelegate: AppDelegate {

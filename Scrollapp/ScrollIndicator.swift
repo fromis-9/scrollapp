@@ -8,9 +8,11 @@ final class ScrollIndicator {
 
         var diameter: CGFloat { self == .anchor ? 24 : 22 }
 
-        func frame(at point: NSPoint, screen: NSRect? = nil) -> NSRect {
-            if self == .anchor {
-                return NSRect(x: point.x - diameter / 2, y: point.y - diameter / 2,
+        func frame(at point: NSPoint, screen: NSRect? = nil, replacingPointer: Bool = false) -> NSRect {
+            if self == .anchor || replacingPointer {
+                let x = point.x - diameter / 2
+                let y = point.y - diameter / 2
+                return NSRect(x: replacingPointer ? x.rounded() : x, y: replacingPointer ? y.rounded() : y,
                               width: diameter, height: diameter)
             }
 
@@ -34,15 +36,18 @@ final class ScrollIndicator {
     private var lastPoint: NSPoint?
     private var horizontalEnabled = false
     private var direction = ScrollDirection()
+    private var backgroundCursor: BackgroundCursor?
+    private var nextVisibilityCheck: TimeInterval = 0
 
     init(style: Style) {
         self.style = style
     }
 
-    func show(at point: NSPoint, horizontalEnabled: Bool) {
+    func show(at point: NSPoint, horizontalEnabled: Bool, replacesPointer: Bool = false) {
         hide()
 
-        let frame = frame(at: point)
+        let replacingPointer = style == .pointer && replacesPointer
+        let frame = frame(at: point, replacingPointer: replacingPointer)
         let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
@@ -57,23 +62,46 @@ final class ScrollIndicator {
         let indicator = ScrollIndicatorGlyph(frame: NSRect(origin: .zero, size: frame.size))
         panel.contentView = indicator
 
+        if replacingPointer { panel.alphaValue = 0 }
         self.panel = panel
         self.indicator = indicator
         lastPoint = point
         update(horizontalEnabled: horizontalEnabled)
         panel.orderFrontRegardless()
+
+        guard replacingPointer else { return }
+        guard panel.isVisible, let cursor = BackgroundCursor(), cursor.hide() else {
+            hide()
+            return
+        }
+        backgroundCursor = cursor
+        nextVisibilityCheck = 0
+        panel.alphaValue = 1
     }
 
-    func move(to point: NSPoint) {
-        guard let panel, point != lastPoint else { return }
+    func move(to point: NSPoint) -> Bool {
+        guard let panel else { return true }
+        if let backgroundCursor {
+            let now = ProcessInfo.processInfo.systemUptime
+            if now >= nextVisibilityCheck {
+                nextVisibilityCheck = now + 0.1
+                if !backgroundCursor.isHidden {
+                    hide()
+                    return false
+                }
+            }
+        }
+        guard point != lastPoint else { return true }
         lastPoint = point
-        let origin = frame(at: point).origin
+        let origin = frame(at: point, replacingPointer: backgroundCursor != nil).origin
         if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
+        return true
     }
 
-    private func frame(at point: NSPoint) -> NSRect {
-        let screen = style == .pointer ? NSScreen.screens.first(where: { $0.frame.contains(point) })?.frame : nil
-        return style.frame(at: point, screen: screen)
+    private func frame(at point: NSPoint, replacingPointer: Bool) -> NSRect {
+        let screen = style == .pointer && !replacingPointer
+            ? NSScreen.screens.first(where: { $0.frame.contains(point) })?.frame : nil
+        return style.frame(at: point, screen: screen, replacingPointer: replacingPointer)
     }
 
     func update(horizontalEnabled: Bool) {
@@ -97,6 +125,11 @@ final class ScrollIndicator {
     }
 
     func hide() {
+        if let cursor = backgroundCursor {
+            panel?.alphaValue = 0
+            backgroundCursor = nil
+            cursor.restore()
+        }
         panel?.close()
         panel = nil
         indicator = nil

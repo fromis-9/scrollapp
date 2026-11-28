@@ -13,7 +13,7 @@ A macOS utility that brings Windows-style auto-scrolling to macOS. Middle-click 
 - **Trackpad Support**: Option+Scroll activation for trackpad users
 - **Adjustable Sensitivity**: Slider control from 0.1x to 3.0x speed with exponential slow-speed scaling
 - **Constant Speed**: Start scrolling immediately at 1, 2, 4, 8, 16, 32, 64, or 128 pixels per second
-- **Visible Scroll Indicator**: Follow Pointer mode shows a transparent icon beside the pointer, with a blue arrow for the active direction. At a constant speed, the icon stays at the starting point.
+- **Scroll Indicator**: In Follow Pointer mode, the scroll cursor replaces the normal pointer and highlights the active direction in blue. At a constant speed, the indicator stays at the starting point.
 - **Optional Horizontal Scrolling**: Move left or right for sideways scrolling, or move diagonally to scroll on both axes
 - **Customizable Direction**: Option to invert scrolling direction based on preference
 - **Launch at Login**: Optional automatic startup
@@ -21,8 +21,8 @@ A macOS utility that brings Windows-style auto-scrolling to macOS. Middle-click 
 
 ## Installation
 
-1. Download the DMG from the [latest GitHub release](https://github.com/fromis-9/scrollapp/releases/latest).
-2. Open the DMG, drag Scrollapp into **Applications**, and open it from there.
+1. Download `Scrollapp-v1.3.1.zip` from the [latest GitHub release](https://github.com/fromis-9/scrollapp/releases/latest).
+2. Unzip the download, drag Scrollapp into **Applications**, and open it from there.
 3. Grant **Accessibility** access when prompted. On macOS Ventura or later, go to **System Settings → Privacy & Security → Accessibility**. On Big Sur or Monterey, go to **System Preferences → Security & Privacy → Privacy → Accessibility**.
 4. If macOS also prompts for **Input Monitoring**, enable Scrollapp in that section. You can check both permissions from **Settings → Permissions…** in the Scrollapp menu. Quit and reopen Scrollapp after changing permissions.
 
@@ -58,6 +58,8 @@ Plain **Middle Click** leaves links alone when the app exposes them through macO
 **Follow Pointer**
 
 Choose **Scroll Mode → Follow Pointer** to steer with the mouse.
+
+Auto-scroll stops when you leave the current window, enter the menu bar, switch apps, or switch desktops.
 
 - Move cursor **up** to scroll **up**
 - Move cursor **down** to scroll **down**

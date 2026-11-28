@@ -45,12 +45,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var scrollMotion = ScrollMotion()
     private var doubleClick = DoubleClickActivation()
     private var trackpadActivation = TrackpadActivation()
+    private var scrollApplicationPID: pid_t?
+    private var scrollWindowNumber: Int?
     var isDirectionInverted = false  // Default is now "up scrolls up"
     var scrollSensitivity: Double = 1.0  // Default sensitivity multiplier
     var fixedScrollSpeed: FixedScrollSpeed = .off
     var activationMethod: ActivationMethod = .middleClick  // Default activation method
 
     private var allowsHorizontalScrolling: Bool { horizontalScrollingEnabled && fixedScrollSpeed == .off }
+    private var usesCursorPreview: Bool {
+        #if SCROLLAPP_CURSOR_PREVIEW
+        true
+        #else
+        false
+        #endif
+    }
 
     enum FixedScrollSpeed: Int, CaseIterable {
         case off = 0
@@ -164,6 +173,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        if usesCursorPreview { stopAutoScroll() }
         menu.item(withTitle: "Launch at Login")?.state = LoginAtStartup.menuState
     }
 
@@ -349,12 +359,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    func startAutoScroll(at point: NSPoint, holding button: Int? = nil) {
+    func startAutoScroll(at point: NSPoint, holding button: Int? = nil, fromMenu: Bool = false) {
         stopAutoScroll()
+        if usesCursorPreview && !fromMenu {
+            guard !isInMenuBar(point) else { return }
+            let windowNumber = NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0)
+            guard windowNumber > 0 else { return }
+            scrollWindowNumber = windowNumber
+        }
         originalPoint = point
         scrollPosition = ScrollPosition(at: point)
         heldButton = button
         isAutoScrolling = true
+        if usesCursorPreview {
+            scrollApplicationPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            observeScrollInterruptions()
+        }
         updateScrollFeedback()
         scheduleScrollTimer()
         if fixedScrollSpeed != .off { performScroll() }
@@ -370,7 +390,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func performScroll(at pointer: CGPoint = NSEvent.mouseLocation) {
-        guard originalPoint != nil else { return }
+        guard let originalPoint else { return }
+        if usesCursorPreview {
+            if isInMenuBar(pointer) {
+                if scrollWindowNumber != nil { stopAutoScroll() }
+                return
+            }
+            let windowNumber = NSWindow.windowNumber(at: pointer, belowWindowWithWindowNumber: 0)
+            if let scrollWindowNumber {
+                guard scrollWindowNumber == windowNumber else {
+                    stopAutoScroll()
+                    return
+                }
+            } else {
+                // Menu activation waits for the pointer to move onto a scroll target.
+                guard pointer != originalPoint, windowNumber > 0 else { return }
+                scrollWindowNumber = windowNumber
+            }
+        }
         let pixels: ScrollMotion.Delta
         if fixedScrollSpeed == .off {
             guard let origin = scrollPosition?.origin(at: pointer, horizontalEnabled: allowsHorizontalScrolling) else {
@@ -383,7 +420,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             pixels = scrollMotion.pixelDelta(displacement: displacement, sensitivity: scrollSensitivity,
                                              inverted: isDirectionInverted,
                                              horizontalEnabled: allowsHorizontalScrolling, area: scrollArea)
-            scrollCursor.move(to: pointer)
+            guard scrollCursor.move(to: pointer) else {
+                stopAutoScroll()
+                return
+            }
             scrollCursor.updateDirection(pixels.direction)
         } else {
             let direction = isDirectionInverted ? 1 : -1
@@ -393,6 +433,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         guard pixels.vertical != 0 || pixels.horizontal != 0 else { return }
 
+        // The foreground app can change before its activation notification reaches this process.
+        if let scrollApplicationPID, scrollApplicationPID != NSWorkspace.shared.frontmostApplication?.processIdentifier {
+            stopAutoScroll()
+            return
+        }
         if let scrollEvent = CGEvent(scrollWheelEvent2Source: nil,
                                     units: .pixel,
                                     wheelCount: allowsHorizontalScrolling ? 2 : 1,
@@ -408,6 +453,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         event.post(tap: .cgSessionEventTap)
     }
 
+    private func isInMenuBar(_ point: CGPoint) -> Bool {
+        NSScreen.screens.contains { screen in
+            screen.frame.contains(point) && point.y >= screen.visibleFrame.maxY
+        }
+    }
+
     private func updateScrollFeedback() {
         let symbol = isAutoScrolling ? "arrow.up.and.down.circle.fill" : "arrow.up.and.down.circle"
         let label = isAutoScrolling ? "Scrollapp, auto-scroll active" : "Scrollapp"
@@ -418,7 +469,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let point = originalPoint, showsScrollIndicators {
             if fixedScrollSpeed == .off {
                 scrollAnchor.hide()
-                scrollCursor.show(at: NSEvent.mouseLocation, horizontalEnabled: allowsHorizontalScrolling)
+                scrollCursor.show(at: NSEvent.mouseLocation, horizontalEnabled: allowsHorizontalScrolling,
+                                  replacesPointer: usesCursorPreview)
             } else {
                 scrollCursor.hide()
                 scrollAnchor.show(at: point, horizontalEnabled: false)
@@ -483,12 +535,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if isAutoScrolling {
             stopAutoScroll()
         } else {
-            startTrackpadAutoScroll()
+            startTrackpadAutoScroll(fromMenu: true)
         }
     }
 
-    func startTrackpadAutoScroll() {
-        startAutoScroll(at: NSEvent.mouseLocation)
+    func startTrackpadAutoScroll(fromMenu: Bool = false) {
+        startAutoScroll(at: NSEvent.mouseLocation, fromMenu: fromMenu)
         showTrackpadModeNotification()
     }
 
@@ -570,6 +622,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scrollTimer?.invalidate()
         scrollTimer = nil
         let wasScrolling = isAutoScrolling
+        if usesCursorPreview && wasScrolling {
+            NSWorkspace.shared.notificationCenter.removeObserver(self)
+            NotificationCenter.default.removeObserver(self, name: NSApplication.didChangeScreenParametersNotification,
+                                                      object: nil)
+        }
+        scrollApplicationPID = nil
+        scrollWindowNumber = nil
         isAutoScrolling = false
         originalPoint = nil
         scrollArea = nil
@@ -578,6 +637,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scrollMotion = ScrollMotion()
         doubleClick = DoubleClickActivation()
         if wasScrolling { updateScrollFeedback() }
+    }
+
+    private func observeScrollInterruptions() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.activeSpaceDidChangeNotification,
+                     NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification,
+                     NSWorkspace.didWakeNotification, NSWorkspace.sessionDidResignActiveNotification] {
+            workspace.addObserver(self, selector: #selector(scrollInterrupted), name: name, object: nil)
+        }
+        NotificationCenter.default.addObserver(self, selector: #selector(scrollInterrupted),
+                                               name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+
+    @objc private func scrollInterrupted(_ notification: Notification) {
+        stopAutoScroll()
     }
 
     func setupTrackpadActivation() {
